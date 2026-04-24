@@ -108,12 +108,13 @@ export default function RiwayatPage() {
         if (data.section === 'body' && data.column.index === 5) {
           const rowIndex = data.row.index;
           const imageData = dataSpesifik[rowIndex].foto;
-          if (imageData) {
+          // Logika baru: Validasi string Base64 sebelum addImage agar PDF tidak crash
+          if (imageData && imageData.startsWith('data:image')) {
             try {
               doc.addImage(imageData, 'JPEG', data.cell.x + 2, data.cell.y + 2, 26, 16);
             } catch (e) {
               doc.setFontSize(6);
-              doc.text('Gagal memuat', data.cell.x + 2, data.cell.y + 10);
+              doc.text('Gbr Bermasalah', data.cell.x + 2, data.cell.y + 10);
             }
           }
         }
@@ -195,7 +196,19 @@ export default function RiwayatPage() {
                         <td className="border border-black p-3 italic text-center text-slate-600">({row.kegiatan})</td>
                         <td className="border border-black p-3 text-center">{row.keterangan}</td>
                         <td className="border border-black p-3 text-center">
-                          <img src={row.foto} className="w-24 h-16 object-cover rounded-md mx-auto shadow-sm" alt="Bukti" />
+                          {/* Logika baru: Handler onError agar UI tidak rusak jika foto format HEIC/Gagal fetch */}
+                          {row.foto ? (
+                            <img 
+                              src={row.foto} 
+                              className="w-24 h-16 object-cover rounded-md mx-auto shadow-sm" 
+                              alt="Bukti" 
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = "https://via.placeholder.com/150?text=Format+Error";
+                              }}
+                            />
+                          ) : (
+                            <span className="text-slate-400 italic">Tanpa Foto</span>
+                          )}
                         </td>
                         <td className="border border-black p-3 text-center no-print">
                           <div className="flex flex-col gap-2">
