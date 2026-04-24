@@ -2,12 +2,35 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+// Import library untuk PDF
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export default function RiwayatPage() {
   const router = useRouter();
   const supabase = createClient();
   const [dataRiwayat, setDataRiwayat] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const getNamaIlmiah = (komoditas: string) => {
+    const namaLower = komoditas?.toLowerCase() || "";
+    
+    if (namaLower.includes("cabai")) {
+      return "Cabai rawit (Capsicum frutescens L.)";
+    }
+    // DITAMBAH: Cek "bunga" atau "kembang" supaya sinkron dengan SQL kamu
+    if (namaLower.includes("bunga kol") || namaLower.includes("kembang kol")) {
+      return "Bunga Kol (Brassica oleracea var. botrytis L.)";
+    }
+    if (namaLower.includes("seledri")) {
+      return "Seledri (Apium graveolens L.)";
+    }
+    if (namaLower.includes("tomat")) {
+      return "Tomat (Solanum lycopersicum L.)";
+    }
+    
+    return komoditas; 
+  };
 
   // Fungsi untuk mengambil data dari Supabase dengan urutan kronologis
   const fetchLogs = async () => {
@@ -53,8 +76,56 @@ export default function RiwayatPage() {
     }
   };
 
+  // LOGIKA BARU: FUNGSI DOWNLOAD PDF PER KELOMPOK (DIPINDAH KE DALAM TABEL)
+  const downloadPDFPerKelompok = async (noKelompok: string) => {
+    const doc = new jsPDF('l', 'mm', 'a4');
+    const dataSpesifik = kelompokGroups[noKelompok];
+
+    doc.setFontSize(16);
+    doc.text(`RIWAYAT LOGBOOK - KELOMPOK ${noKelompok}`, 14, 15);
+    doc.setFontSize(10);
+    // Menggunakan fungsi getNamaIlmiah untuk PDF
+    doc.text(`Komoditas: ${getNamaIlmiah(dataSpesifik[0].komoditas)}`, 14, 22);
+
+    const tableData = dataSpesifik.map((row: any) => [
+      row.tanggal,
+      row.nama.toUpperCase(),
+      row.npm,
+      row.kegiatan,
+      row.keterangan,
+      '' // Placeholder foto
+    ]);
+
+    autoTable(doc, {
+      startY: 30,
+      head: [['Hari/Tanggal', 'Nama', 'NPM', 'Kegiatan', 'Keterangan', 'Dokumentasi']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42] },
+      styles: { fontSize: 8, cellPadding: 2, valign: 'middle' },
+      columnStyles: { 5: { cellWidth: 30 } },
+      didDrawCell: (data) => {
+        if (data.section === 'body' && data.column.index === 5) {
+          const rowIndex = data.row.index;
+          const imageData = dataSpesifik[rowIndex].foto;
+          if (imageData) {
+            try {
+              doc.addImage(imageData, 'JPEG', data.cell.x + 2, data.cell.y + 2, 26, 16);
+            } catch (e) {
+              doc.setFontSize(6);
+              doc.text('Gagal memuat', data.cell.x + 2, data.cell.y + 10);
+            }
+          }
+        }
+      },
+      bodyStyles: { minCellHeight: 20 }
+    });
+
+    doc.save(`Logbook_Kelompok_${noKelompok}.pdf`);
+  };
+
   // Mengelompokkan data berdasarkan nomor kelompok
-  const kelompokGroups = dataRiwayat.reduce((groups, item) => {
+  const kelompokGroups = dataRiwayat.reduce((groups: any, item: any) => {
     const group = groups[item.kelompok] || [];
     group.push(item);
     groups[item.kelompok] = group;
@@ -69,9 +140,11 @@ export default function RiwayatPage() {
             <button onClick={() => router.push('/')} className="text-sm font-bold text-slate-400 hover:text-black transition-colors">← Dashboard</button>
             <h1 className="text-3xl font-black mt-2 uppercase tracking-tighter">Riwayat Logbook Cloud</h1>
           </div>
-          <button onClick={fetchLogs} className="bg-slate-100 hover:bg-slate-200 px-6 py-2 rounded-full font-bold text-xs transition-all shadow-sm">
-            {loading ? "Memuat..." : "🔄 Refresh Data"}
-          </button>
+          <div className="flex gap-3">
+            <button onClick={fetchLogs} className="bg-slate-100 hover:bg-slate-200 px-6 py-2 rounded-full font-bold text-xs transition-all shadow-sm">
+              {loading ? "Memuat..." : "🔄 Refresh Data"}
+            </button>
+          </div>
         </header>
 
         {loading ? (
@@ -89,8 +162,15 @@ export default function RiwayatPage() {
               <div className="mb-6 flex justify-between items-end">
                 <div>
                   <h2 className="text-xl font-black text-blue-600 uppercase tracking-tight">Kelompok {noKelompok}</h2>
-                  <p className="text-sm text-slate-500 italic">Komoditas: {kelompokGroups[noKelompok][0].komoditas}</p>
+                  {/* Menggunakan fungsi getNamaIlmiah untuk tampilan Web */}
+                  <p className="text-sm text-slate-500 italic font-medium">Komoditas: {getNamaIlmiah(kelompokGroups[noKelompok][0].komoditas)}</p>
                 </div>
+                <button 
+                  onClick={() => downloadPDFPerKelompok(noKelompok)}
+                  className="bg-white hover:bg-slate-50 text-black border border-slate-200 px-4 py-2 rounded-lg font-bold text-[10px] transition-all shadow-sm flex items-center gap-2 no-print"
+                >
+                  📩 UNDUH KELOMPOK {noKelompok}
+                </button>
               </div>
 
               <div className="overflow-x-auto rounded-xl border border-black shadow-sm">
@@ -118,12 +198,14 @@ export default function RiwayatPage() {
                           <img src={row.foto} className="w-24 h-16 object-cover rounded-md mx-auto shadow-sm" alt="Bukti" />
                         </td>
                         <td className="border border-black p-3 text-center no-print">
-                          <button 
-                            onClick={() => handleHapusData(row.id)}
-                            className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white px-3 py-1 rounded-lg font-bold transition-all border border-red-100"
-                          >
-                            Hapus
-                          </button>
+                          <div className="flex flex-col gap-2">
+                             <button 
+                              onClick={() => handleHapusData(row.id)}
+                              className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white px-3 py-1 rounded-lg font-bold transition-all border border-red-100"
+                            >
+                              Hapus
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

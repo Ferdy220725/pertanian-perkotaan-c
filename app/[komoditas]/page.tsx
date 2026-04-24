@@ -55,7 +55,7 @@ const DAFTAR_MAHASISWA = [
 export default function InputLogbook({ params }: { params: { komoditas: string } }) {
   const router = useRouter();
   const supabase = createClient();
-  const komoditas = decodeURIComponent(params.komoditas);
+  const komoditasRaw = decodeURIComponent(params.komoditas);
 
   const [formData, setFormData] = useState({
     nama: '',
@@ -69,7 +69,7 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
 
   const [loading, setLoading] = useState(false);
 
-  // Auto-fill NPM saat nama dipilih
+  // Auto-fill NPM saat nama dipilih (Logika Tetap)
   const handleSelectMahasiswa = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedNama = e.target.value;
     const mhs = DAFTAR_MAHASISWA.find(item => item.nama === selectedNama);
@@ -96,10 +96,16 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
     if (!formData.foto) return alert("Wajib upload foto dokumentasi!");
     setLoading(true);
 
+    // LOGIKA SISIPAN: Sinkronisasi nama komoditas agar sesuai standar SQL/Check Constraint
+    let komoditasFix = komoditasRaw;
+    if (komoditasRaw.toLowerCase().includes("kol")) {
+      komoditasFix = "Bunga Kol";
+    }
+
     try {
       const { error } = await supabase.from('logbook').insert([{
         ...formData,
-        komoditas: komoditas
+        komoditas: komoditasFix // Menggunakan data yang sudah disinkronkan
       }]);
 
       if (error) throw error;
@@ -119,7 +125,7 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
         <header className="text-center mb-10">
           <button onClick={() => router.push('/')} className="text-[10px] font-black text-slate-300 hover:text-black uppercase tracking-widest mb-4 inline-block transition-colors">← Batal</button>
           <h1 className="text-2xl font-black uppercase tracking-tighter leading-none">Isi Logbook</h1>
-          <p className="text-blue-600 font-bold text-xs mt-2 uppercase tracking-widest">{komoditas}</p>
+          <p className="text-blue-600 font-bold text-xs mt-2 uppercase tracking-widest">{komoditasRaw}</p>
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-5">

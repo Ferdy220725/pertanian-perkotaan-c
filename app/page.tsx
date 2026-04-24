@@ -4,10 +4,10 @@ import Link from 'next/link';
 
 export default function Home() {
   const komoditas = [
-    { id: 'cabai', nama: 'Cabai', icon: '🌶️', warna: 'bg-red-50 text-red-600 border-red-100' },
-    { id: 'bunga-kol', nama: 'Bunga Kol', icon: '🥦', warna: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
-    { id: 'tomat', nama: 'Tomat', icon: '🍅', warna: 'bg-orange-50 text-orange-600 border-orange-100' },
-    { id: 'seledri', nama: 'Seledri', icon: '🌿', warna: 'bg-green-50 text-green-600 border-green-100' },
+    { id: 'cabai', nama: 'Cabai rawit (Capsicum frutescens L.)', icon: '🌶️', warna: 'bg-red-50 text-red-600 border-red-100' },
+    { id: 'bunga-kol', nama: 'Bunga Kol (Brassica oleracea var. botrytis L.)', icon: '🥦', warna: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
+    { id: 'tomat', nama: 'Tomat (Solanum lycopersicum)', icon: '🍅', warna: 'bg-orange-50 text-orange-600 border-orange-100' },
+    { id: 'seledri', nama: 'Seledri (Apium graveolens L.)', icon: '🌿', warna: 'bg-green-50 text-green-600 border-green-100' },
   ];
 
   return (

@@ -13,11 +13,18 @@ export default function LaporanPage() {
   const supabase = createClient();
   const [dataRiwayat, setDataRiwayat] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // State untuk menampung input parameter per kelompok
   const [parameters, setParameters] = useState<any>({});
 
-  // FUNGSI AMBIL DATA DARI SUPABASE
+  // LOGIKA BARU: Sinkronisasi Nama Ilmiah agar sama dengan Menu Riwayat
+  const getNamaIlmiah = (komoditas: string) => {
+    const namaLower = komoditas?.toLowerCase() || "";
+    if (namaLower.includes("cabai")) return "Cabai rawit Capsicum frutescens L.";
+    if (namaLower.includes("kembang kol")) return "Kembang Kol: Brassica oleracea var. botrytis L.";
+    if (namaLower.includes("seledri")) return "Seledri: Apium graveolens L.";
+    if (namaLower.includes("tomat")) return "Tomat: Solanum lycopersicum L.";
+    return komoditas;
+  };
+
   const fetchLogs = async () => {
     setLoading(true);
     try {
@@ -39,7 +46,7 @@ export default function LaporanPage() {
     fetchLogs();
   }, []);
 
-  const kelompokGroups = dataRiwayat.reduce((groups, item) => {
+  const kelompokGroups = dataRiwayat.reduce((groups: any, item: any) => {
     const group = groups[item.kelompok] || [];
     group.push(item);
     groups[item.kelompok] = group;
@@ -72,7 +79,8 @@ export default function LaporanPage() {
 
   const downloadWord = async (noKelompok: string, items: any[]) => {
     try {
-      const komoditas = items[0].komoditas;
+      // SINKRONISASI: Menggunakan nama ilmiah di file Word
+      const komoditasIlmiah = getNamaIlmiah(items[0].komoditas);
       const groupParams = parameters[noKelompok] || {};
 
       const imageRuns = items.map((item) => {
@@ -83,8 +91,7 @@ export default function LaporanPage() {
             children: [
               new ImageRun({
                 data: base64ToUint8Array(item.foto),
-                // MENGGUNAKAN RASIO 4:3 (300x225) AGAR PROPORSIONAL HP
-                transformation: { width: 300, height: 300 },
+                transformation: { width: 300, height: 200 }, // Disesuaikan sedikit tingginya agar hemat kertas
                 type: "png",
               }),
               new TextRun({ 
@@ -92,6 +99,13 @@ export default function LaporanPage() {
                 break: 1,
                 size: 20,
                 italics: true 
+              }),
+              new TextRun({ 
+                text: `\nOleh: ${item.nama || 'Anonim'}`, 
+                break: 1,
+                size: 18,
+                bold: true,
+                color: "444444"
               }),
             ],
           });
@@ -105,9 +119,9 @@ export default function LaporanPage() {
             new Paragraph({ text: "" }),
             new Paragraph({ children: [new TextRun({ text: "A. Identitas", bold: true })] }),
             new Paragraph({ text: `   Kelompok  : ${noKelompok}` }),
-            new Paragraph({ text: `   Komoditas : ${komoditas}` }),
+            new Paragraph({ text: `   Komoditas : ${komoditasIlmiah}` }), // Terpakai di sini
             new Paragraph({ text: "" }),
-
+            // ... (sisa logika tabel, kendala, solusi tetap sama)
             new Paragraph({ children: [new TextRun({ text: "B. Data Pertumbuhan dan Perkembangan Tanaman", bold: true })] }),
             new Table({
               width: { size: 100, type: WidthType.PERCENTAGE },
@@ -154,6 +168,7 @@ export default function LaporanPage() {
   return (
     <main className="min-h-screen bg-[#f8fafc] p-6 md:p-12 font-sans text-slate-900">
       <div className="max-w-5xl mx-auto">
+        {/* ... (Header dan Loading UI Anda tetap sama) ... */}
         <header className="mb-10">
           <button onClick={() => router.push('/')} className="text-sm font-bold text-slate-400 hover:text-black transition-colors">← Kembali ke Dashboard</button>
           <h1 className="text-4xl font-black mt-2 tracking-tighter uppercase">Penyusunan Laporan</h1>
@@ -175,7 +190,8 @@ export default function LaporanPage() {
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 border-b border-slate-50 pb-6">
                 <div>
                   <span className="text-[10px] font-black bg-blue-600 text-white px-4 py-1 rounded-full uppercase tracking-widest">Kelompok {noKelompok}</span>
-                  <h2 className="text-2xl font-bold mt-2 text-slate-800">{kelompokGroups[noKelompok][0].komoditas}</h2>
+                  {/* SINKRONISASI: Tampilan UI juga menggunakan nama ilmiah */}
+                  <h2 className="text-2xl font-bold mt-2 text-slate-800">{getNamaIlmiah(kelompokGroups[noKelompok][0].komoditas)}</h2>
                 </div>
                 <button 
                   onClick={() => downloadWord(noKelompok, kelompokGroups[noKelompok])} 
@@ -184,8 +200,7 @@ export default function LaporanPage() {
                   📥 DOWNLOAD .DOCX
                 </button>
               </div>
-
-              {/* INPUT PARAMETER SECTION */}
+              {/* ... (Sisa Input Parameter dan Dokumentasi Preview tetap sama) ... */}
               <div className="mb-10">
                 <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2">
                   <span className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></span> Data Pertumbuhan Mingguan
@@ -224,17 +239,17 @@ export default function LaporanPage() {
                 </div>
               </div>
 
-              {/* PREVIEW DOKUMENTASI */}
               <div>
                 <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
                   <span className="w-2 h-2 bg-green-600 rounded-full"></span> Dokumentasi Terdeteksi ({kelompokGroups[noKelompok].length} Foto)
                 </h3>
                 <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
                   {kelompokGroups[noKelompok].map((log: any, idx: number) => (
-                    <div key={idx} className="flex-shrink-0 relative group">
+                    <div key={idx} className="flex-shrink-0 relative group flex flex-col items-center">
                       <img src={log.foto} className="w-28 h-28 object-cover rounded-2xl border-2 border-white shadow-md transition-transform group-hover:scale-105" />
-                      <div className="absolute bottom-2 left-0 right-0 text-center">
+                      <div className="mt-2 flex flex-col items-center gap-1">
                         <span className="bg-black/50 text-white text-[8px] px-2 py-1 rounded-full backdrop-blur-sm">Day {idx + 1}</span>
+                        <span className="text-[9px] font-bold text-slate-600 max-w-[100px] truncate">Oleh: {log.nama || 'Anonim'}</span>
                       </div>
                     </div>
                   ))}
