@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Document, Packer, Paragraph, Table, TableRow, TableCell, 
-  WidthType, HeadingLevel, ImageRun, TextRun, AlignmentType 
+  WidthType, HeadingLevel, ImageRun, TextRun, AlignmentType, BorderStyle 
 } from 'docx';
 import { saveAs } from 'file-saver';
 import { createClient } from '@/utils/supabase/client';
@@ -14,8 +14,8 @@ export default function LaporanPage() {
   const [dataRiwayat, setDataRiwayat] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [parameters, setParameters] = useState<any>({});
+  const [extraInfo, setExtraInfo] = useState<any>({});
 
-  // LOGIKA BARU: Sinkronisasi Nama Ilmiah agar sama dengan Menu Riwayat
   const getNamaIlmiah = (komoditas: string) => {
     const namaLower = komoditas?.toLowerCase() || "";
     if (namaLower.includes("cabai")) return "Cabai rawit Capsicum frutescens L.";
@@ -66,6 +66,41 @@ export default function LaporanPage() {
     }));
   };
 
+  const handleExtraChange = (noKelompok: string, field: string, value: string) => {
+    setExtraInfo((prev: any) => ({
+      ...prev,
+      [noKelompok]: {
+        ...prev[noKelompok],
+        [field]: value
+      }
+    }));
+  };
+
+  // LOGIKA GENERATOR NARASI SESUAI DRAFT ROOFTOP
+  const generateNarrative = (noKelompok: string) => {
+    const p = parameters[noKelompok] || {};
+    
+    // Ambil nilai atau default 0
+    const t1 = parseFloat(p["Tinggi Tanaman"]?.m1) || 0;
+    const t2 = parseFloat(p["Tinggi Tanaman"]?.m2) || 0;
+    const selisihTinggi = (t2 - t1).toFixed(1);
+
+    const d1 = parseFloat(p["Jumlah Daun"]?.m1) || 0;
+    const d2 = parseFloat(p["Jumlah Daun"]?.m2) || 0;
+    const selisihDaun = (d2 - d1).toFixed(1);
+
+    const bunga2 = p["Jumlah Bunga"]?.m2 || "0";
+    const buah2 = p["Jumlah Buah"]?.m2 || "0";
+
+    return `Berdasarkan hasil pengamatan yang telah dilakukan pada tanaman yang dibudidayakan di area rooftop, dapat disimpulkan bahwa pertumbuhan tanaman menunjukkan variasi pada setiap parameter yang diamati. Tinggi tanaman mengalami peningkatan dari ${t1} cm pada awal pengamatan menjadi ${t2} cm pada akhir pengamatan, dengan rata-rata pertambahan sebesar ${selisihTinggi} cm per minggu. Hal ini menunjukkan bahwa pertumbuhan vegetatif tanaman berlangsung dengan cukup baik meskipun ditanam pada lingkungan rooftop yang memiliki intensitas cahaya matahari tinggi.
+
+Jumlah daun yang terbentuk sebanyak ${d2} helai dengan pertambahan rata-rata ${selisihDaun} helai per minggu. Kondisi daun secara umum hijau segar, yang mengindikasikan bahwa tanaman masih mampu beradaptasi dengan kondisi lingkungan rooftop yang cenderung panas dan memiliki paparan angin yang cukup kuat.
+
+Pada fase generatif, tanaman mulai menghasilkan bunga sebanyak ${bunga2} bunga dan berkembang menjadi buah sebanyak ${buah2} buah. Munculnya bunga dan buah ini menunjukkan bahwa tanaman mampu melewati fase vegetatif dengan baik dan melanjutkan ke fase generatif meskipun berada pada kondisi lingkungan yang relatif lebih ekstrem dibandingkan lahan biasa.
+
+Secara keseluruhan, pertumbuhan tanaman di rooftop dipengaruhi oleh beberapa faktor lingkungan seperti intensitas cahaya matahari yang tinggi, ketersediaan air yang cepat menguap, serta terpaan angin. Meskipun demikian, tanaman tetap menunjukkan pertumbuhan yang cukup optimal.`;
+  };
+
   const base64ToUint8Array = (base64String: string) => {
     const base64Data = base64String.split(',')[1];
     const binaryString = window.atob(base64Data);
@@ -79,38 +114,42 @@ export default function LaporanPage() {
 
   const downloadWord = async (noKelompok: string, items: any[]) => {
     try {
-      // SINKRONISASI: Menggunakan nama ilmiah di file Word
       const komoditasIlmiah = getNamaIlmiah(items[0].komoditas);
       const groupParams = parameters[noKelompok] || {};
+      const extra = extraInfo[noKelompok] || {};
 
-      const imageRuns = items.map((item) => {
-        if (!item.foto) return new Paragraph("Foto tidak tersedia");
+      const photoCells = items.map((item) => {
+        if (!item.foto) return new TableCell({ children: [new Paragraph("Foto N/A")] });
         try {
-          return new Paragraph({
-            alignment: AlignmentType.CENTER,
+          return new TableCell({
+            borders: { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE } },
             children: [
-              new ImageRun({
-                data: base64ToUint8Array(item.foto),
-                transformation: { width: 300, height: 200 }, // Disesuaikan sedikit tingginya agar hemat kertas
-                type: "png",
-              }),
-              new TextRun({ 
-                text: `\nTanggal: ${item.tanggal}`, 
-                break: 1,
-                size: 20,
-                italics: true 
-              }),
-              new TextRun({ 
-                text: `\nOleh: ${item.nama || 'Anonim'}`, 
-                break: 1,
-                size: 18,
-                bold: true,
-                color: "444444"
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [
+                  new ImageRun({
+                    data: base64ToUint8Array(item.foto),
+                    transformation: { width: 100, height: 100 },
+                    type: "png",
+                  }),
+                  new TextRun({ text: `\nTanggal: ${item.tanggal}`, break: 1, size: 16, italics: true }),
+                  new TextRun({ text: `\nOleh: ${item.nama || 'Anonim'}`, break: 1, size: 16, bold: true }),
+                ],
               }),
             ],
           });
-        } catch (e) { return new Paragraph("Gagal memuat gambar"); }
+        } catch (e) { return new TableCell({ children: [new Paragraph("Error Foto")] }); }
       });
+
+      const photoRows = [];
+      for (let i = 0; i < photoCells.length; i += 2) {
+        photoRows.push(new TableRow({
+          children: [
+            photoCells[i],
+            photoCells[i + 1] || new TableCell({ children: [], borders: { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE } } })
+          ]
+        }));
+      }
 
       const doc = new Document({
         sections: [{
@@ -119,9 +158,8 @@ export default function LaporanPage() {
             new Paragraph({ text: "" }),
             new Paragraph({ children: [new TextRun({ text: "A. Identitas", bold: true })] }),
             new Paragraph({ text: `   Kelompok  : ${noKelompok}` }),
-            new Paragraph({ text: `   Komoditas : ${komoditasIlmiah}` }), // Terpakai di sini
+            new Paragraph({ text: `   Komoditas : ${komoditasIlmiah}` }),
             new Paragraph({ text: "" }),
-            // ... (sisa logika tabel, kendala, solusi tetap sama)
             new Paragraph({ children: [new TextRun({ text: "B. Data Pertumbuhan dan Perkembangan Tanaman", bold: true })] }),
             new Table({
               width: { size: 100, type: WidthType.PERCENTAGE },
@@ -146,16 +184,20 @@ export default function LaporanPage() {
             }),
             new Paragraph({ text: "" }),
             new Paragraph({ children: [new TextRun({ text: "C. Dokumentasi", bold: true })] }),
-            ...imageRuns,
+            new Table({
+              width: { size: 100, type: WidthType.PERCENTAGE },
+              rows: photoRows,
+              borders: { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE }, insideHorizontal: { style: BorderStyle.NONE }, insideVertical: { style: BorderStyle.NONE } }
+            }),
             new Paragraph({ text: "" }),
             new Paragraph({ children: [new TextRun({ text: "D. Kendala", bold: true })] }),
-            new Paragraph({ text: "__________________________________________________________________" }),
+            new Paragraph({ text: extra.kendala || "Tidak ada kendala." }),
             new Paragraph({ text: "" }),
             new Paragraph({ children: [new TextRun({ text: "E. Solusi", bold: true })] }),
-            new Paragraph({ text: "__________________________________________________________________" }),
+            new Paragraph({ text: extra.solusi || "Tidak ada solusi khusus." }),
             new Paragraph({ text: "" }),
             new Paragraph({ children: [new TextRun({ text: "F. Kesimpulan", bold: true })] }),
-            new Paragraph({ text: "__________________________________________________________________" }),
+            new Paragraph({ text: extra.kesimpulan || generateNarrative(noKelompok) }),
           ],
         }],
       });
@@ -168,7 +210,6 @@ export default function LaporanPage() {
   return (
     <main className="min-h-screen bg-[#f8fafc] p-6 md:p-12 font-sans text-slate-900">
       <div className="max-w-5xl mx-auto">
-        {/* ... (Header dan Loading UI Anda tetap sama) ... */}
         <header className="mb-10">
           <button onClick={() => router.push('/')} className="text-sm font-bold text-slate-400 hover:text-black transition-colors">← Kembali ke Dashboard</button>
           <h1 className="text-4xl font-black mt-2 tracking-tighter uppercase">Penyusunan Laporan</h1>
@@ -190,7 +231,6 @@ export default function LaporanPage() {
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 border-b border-slate-50 pb-6">
                 <div>
                   <span className="text-[10px] font-black bg-blue-600 text-white px-4 py-1 rounded-full uppercase tracking-widest">Kelompok {noKelompok}</span>
-                  {/* SINKRONISASI: Tampilan UI juga menggunakan nama ilmiah */}
                   <h2 className="text-2xl font-bold mt-2 text-slate-800">{getNamaIlmiah(kelompokGroups[noKelompok][0].komoditas)}</h2>
                 </div>
                 <button 
@@ -200,7 +240,7 @@ export default function LaporanPage() {
                   📥 DOWNLOAD .DOCX
                 </button>
               </div>
-              {/* ... (Sisa Input Parameter dan Dokumentasi Preview tetap sama) ... */}
+
               <div className="mb-10">
                 <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2">
                   <span className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></span> Data Pertumbuhan Mingguan
@@ -236,6 +276,40 @@ export default function LaporanPage() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">D. Kendala</label>
+                  <textarea 
+                    className="p-4 bg-slate-50 border border-slate-100 rounded-2xl h-24 text-xs outline-none focus:ring-2 ring-red-500"
+                    placeholder="Contoh: Serangan hama kutu daun..."
+                    onChange={(e) => handleExtraChange(noKelompok, 'kendala', e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">E. Solusi</label>
+                  <textarea 
+                    className="p-4 bg-slate-50 border border-slate-100 rounded-2xl h-24 text-xs outline-none focus:ring-2 ring-green-500"
+                    placeholder="Contoh: Pemberian pestisida nabati..."
+                    onChange={(e) => handleExtraChange(noKelompok, 'solusi', e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">F. Kesimpulan</label>
+                  <textarea 
+                    className="p-4 bg-slate-50 border border-slate-100 rounded-2xl h-24 text-xs outline-none focus:ring-2 ring-blue-500"
+                    placeholder="Biarkan kosong untuk menggunakan narasi otomatis dari tabel..."
+                    value={extraInfo[noKelompok]?.kesimpulan || ""}
+                    onChange={(e) => handleExtraChange(noKelompok, 'kesimpulan', e.target.value)}
+                  />
+                  <button 
+                    onClick={() => handleExtraChange(noKelompok, 'kesimpulan', generateNarrative(noKelompok))}
+                    className="text-[8px] font-bold text-blue-600 hover:underline text-left"
+                  >
+                    ✨ Gunakan Narasi Otomatis Rooftop
+                  </button>
                 </div>
               </div>
 
