@@ -50,7 +50,8 @@ export default function Home() {
                     <li><b>Pilih Komoditas:</b> Di halaman utama, klik tombol komoditas (Cabai, Kol, Seledri, Tomat).</li>
                     <li><b>Input Nama Pengamat:</b> Klik dropdown, pilih namamu. Bisa pilih lebih dari 1 jika bersama teman (Nama akan muncul sebagai "tag" biru).</li>
                     <li><b>NPM Otomatis:</b> NPM akan terisi secara kolektif sesuai nama yang dipilih.</li>
-                    <li><b>Detail & Dokumentasi:</b> Isi kelompok, tanggal, kegiatan, dan keterangan. <b>Wajib upload foto</b> yang jelas.</li>
+                    <li><b>Detail & Dokumentasi:</b> Isi kelompok, tanggal, kegiatan, dan keterangan.</li>
+                    <li><b>Ketentuan Foto:</b> Wajib upload foto dokumentasi format <b>JPG</b>, ukuran maksimal <b>2 MB</b>, dan rasio foto <b>1:1</b>.</li>
                   </ul>
                 </section>
 
