@@ -46,16 +46,31 @@ export default function RiwayatPage() {
     fetchLogs();
   }, []);
 
-  // LOGIKA BARU: Fungsi Verifikasi Password
-  const handleVerifyPassword = (noKelompok: string) => {
-    // Password disetel: kelompok + nomor (Contoh: kelompok1, kelompok2)
-    // Anda bisa mengganti logika ini sesuai keinginan
-    const correctPassword = `PPUPNJatim${noKelompok}`; 
-    
-    if (passInput[noKelompok] === correctPassword) {
-      setUnlockedGroups([...unlockedGroups, noKelompok]);
-    } else {
-      alert("❌ Password Salah! Hubungi ketua kelompok untuk akses.");
+  // LOGIKA DISINKRONKAN DENGAN ADMIN: Fungsi Verifikasi Password dari Database
+  const handleVerifyPassword = async (noKelompok: string) => {
+    try {
+      // 1. Ambil password terbaru dari tabel config_password berdasarkan nomor kelompok
+      const { data: configData, error } = await supabase
+        .from('config_password')
+        .select('password')
+        .eq('kelompok', parseInt(noKelompok))
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (!configData) {
+        alert(`❌ Kelompok ${noKelompok} belum mengatur password di Admin Panel!`);
+        return;
+      }
+
+      // 2. Bandingkan input user dengan password dari database (Admin)
+      if (passInput[noKelompok]?.trim() === configData.password.trim()) {
+        setUnlockedGroups([...unlockedGroups, noKelompok]);
+      } else {
+        alert("❌ Password Salah! Hubungi ketua kelompok untuk akses.");
+      }
+    } catch (error: any) {
+      alert("Terjadi kesalahan verifikasi: " + error.message);
     }
   };
 

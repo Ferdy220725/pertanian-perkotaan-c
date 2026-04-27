@@ -110,7 +110,7 @@ export default function Home() {
             </p>
           </div>
           
-          {/* USER PROFILE & PANDUAN BUTTON */}
+          {/* USER PROFILE, PANDUAN & ADMIN BUTTON */}
           <div className="flex flex-col items-end gap-2 self-start md:self-auto">
             <div className="flex items-center gap-4 bg-white p-2 pr-5 rounded-full shadow-sm border border-slate-100">
               <div className="w-10 h-10 rounded-full bg-[#800020] flex items-center justify-center text-white font-bold shadow-md shadow-[#800020]/20">A</div>
@@ -121,12 +121,23 @@ export default function Home() {
                 </p>
               </div>
             </div>
-            <button 
-              onClick={() => setShowGuide(true)}
-              className="mr-4 text-[10px] font-black uppercase tracking-widest text-[#800020] hover:underline transition-all"
-            >
-              📖 Panduan Penggunaan
-            </button>
+            
+            {/* LOGIKA BARU: Menu Navigasi Tambahan */}
+            <div className="flex items-center gap-3 mr-4">
+              <Link 
+                href="/admin-control" 
+                className="text-[9px] font-black uppercase tracking-widest text-slate-300 hover:text-[#800020] transition-colors"
+              >
+                🔒 Admin Panel
+              </Link>
+              <span className="w-[1px] h-3 bg-slate-200"></span>
+              <button 
+                onClick={() => setShowGuide(true)}
+                className="text-[10px] font-black uppercase tracking-widest text-[#800020] hover:underline transition-all"
+              >
+                📖 Panduan Penggunaan
+              </button>
+            </div>
           </div>
         </header>
 
