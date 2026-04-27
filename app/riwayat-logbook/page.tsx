@@ -11,35 +11,26 @@ export default function RiwayatPage() {
   const supabase = createClient();
   const [dataRiwayat, setDataRiwayat] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // LOGIKA BARU: State untuk melacak kelompok mana yang sudah terbuka
+  const [unlockedGroups, setUnlockedGroups] = useState<string[]>([]);
+  const [passInput, setPassInput] = useState<{ [key: string]: string }>({});
 
   const getNamaIlmiah = (komoditas: string) => {
     const namaLower = komoditas?.toLowerCase() || "";
-    
-    if (namaLower.includes("cabai")) {
-      return "Cabai rawit (Capsicum frutescens L.)";
-    }
-    // DITAMBAH: Cek "bunga" atau "kembang" supaya sinkron dengan SQL kamu
-    if (namaLower.includes("bunga kol") || namaLower.includes("kembang kol")) {
-      return "Bunga Kol (Brassica oleracea var. botrytis L.)";
-    }
-    if (namaLower.includes("seledri")) {
-      return "Seledri (Apium graveolens L.)";
-    }
-    if (namaLower.includes("tomat")) {
-      return "Tomat (Solanum lycopersicum L.)";
-    }
-    
+    if (namaLower.includes("cabai")) return "Cabai rawit (Capsicum frutescens L.)";
+    if (namaLower.includes("bunga kol") || namaLower.includes("kembang kol")) return "Bunga Kol (Brassica oleracea var. botrytis L.)";
+    if (namaLower.includes("seledri")) return "Seledri (Apium graveolens L.)";
+    if (namaLower.includes("tomat")) return "Tomat (Solanum lycopersicum L.)";
     return komoditas; 
   };
 
-  // Fungsi untuk mengambil data dari Supabase dengan urutan kronologis
   const fetchLogs = async () => {
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from('logbook')
         .select('*')
-        // MENGUBAH URUTAN: Data paling awal di atas, data terbaru di bawah
         .order('created_at', { ascending: true }); 
       
       if (error) throw error;
@@ -55,19 +46,25 @@ export default function RiwayatPage() {
     fetchLogs();
   }, []);
 
-  // FUNGSI HAPUS DATA DARI SUPABASE
+  // LOGIKA BARU: Fungsi Verifikasi Password
+  const handleVerifyPassword = (noKelompok: string) => {
+    // Password disetel: kelompok + nomor (Contoh: kelompok1, kelompok2)
+    // Anda bisa mengganti logika ini sesuai keinginan
+    const correctPassword = `PPUPNJatim${noKelompok}`; 
+    
+    if (passInput[noKelompok] === correctPassword) {
+      setUnlockedGroups([...unlockedGroups, noKelompok]);
+    } else {
+      alert("❌ Password Salah! Hubungi ketua kelompok untuk akses.");
+    }
+  };
+
   const handleHapusData = async (id: string) => {
     const confirmHapus = confirm("Apakah Anda yakin ingin menghapus data ini secara permanen dari database cloud?");
-    
     if (confirmHapus) {
       try {
-        const { error } = await supabase
-          .from('logbook')
-          .delete()
-          .eq('id', id);
-
+        const { error } = await supabase.from('logbook').delete().eq('id', id);
         if (error) throw error;
-
         alert("✅ Data berhasil dihapus!");
         fetchLogs();
       } catch (error: any) {
@@ -76,15 +73,12 @@ export default function RiwayatPage() {
     }
   };
 
-  // LOGIKA BARU: FUNGSI DOWNLOAD PDF PER KELOMPOK (DIPINDAH KE DALAM TABEL)
   const downloadPDFPerKelompok = async (noKelompok: string) => {
     const doc = new jsPDF('l', 'mm', 'a4');
     const dataSpesifik = kelompokGroups[noKelompok];
-
     doc.setFontSize(16);
     doc.text(`RIWAYAT LOGBOOK - KELOMPOK ${noKelompok}`, 14, 15);
     doc.setFontSize(10);
-    // Menggunakan fungsi getNamaIlmiah untuk PDF
     doc.text(`Komoditas: ${getNamaIlmiah(dataSpesifik[0].komoditas)}`, 14, 22);
 
     const tableData = dataSpesifik.map((row: any) => [
@@ -93,7 +87,7 @@ export default function RiwayatPage() {
       row.npm,
       row.kegiatan,
       row.keterangan,
-      '' // Placeholder foto
+      '' 
     ]);
 
     autoTable(doc, {
@@ -108,7 +102,6 @@ export default function RiwayatPage() {
         if (data.section === 'body' && data.column.index === 5) {
           const rowIndex = data.row.index;
           const imageData = dataSpesifik[rowIndex].foto;
-          // Logika baru: Validasi string Base64 sebelum addImage agar PDF tidak crash
           if (imageData && imageData.startsWith('data:image')) {
             try {
               doc.addImage(imageData, 'JPEG', data.cell.x + 2, data.cell.y + 2, 26, 16);
@@ -121,11 +114,9 @@ export default function RiwayatPage() {
       },
       bodyStyles: { minCellHeight: 20 }
     });
-
     doc.save(`Logbook_Kelompok_${noKelompok}.pdf`);
   };
 
-  // Mengelompokkan data berdasarkan nomor kelompok
   const kelompokGroups = dataRiwayat.reduce((groups: any, item: any) => {
     const group = groups[item.kelompok] || [];
     group.push(item);
@@ -163,68 +154,96 @@ export default function RiwayatPage() {
               <div className="mb-6 flex justify-between items-end">
                 <div>
                   <h2 className="text-xl font-black text-blue-600 uppercase tracking-tight">Kelompok {noKelompok}</h2>
-                  {/* Menggunakan fungsi getNamaIlmiah untuk tampilan Web */}
                   <p className="text-sm text-slate-500 italic font-medium">Komoditas: {getNamaIlmiah(kelompokGroups[noKelompok][0].komoditas)}</p>
                 </div>
-                <button 
-                  onClick={() => downloadPDFPerKelompok(noKelompok)}
-                  className="bg-white hover:bg-slate-50 text-black border border-slate-200 px-4 py-2 rounded-lg font-bold text-[10px] transition-all shadow-sm flex items-center gap-2 no-print"
-                >
-                  📩 UNDUH KELOMPOK {noKelompok}
-                </button>
+                
+                {/* Tombol download hanya muncul jika sudah login/unlocked */}
+                {unlockedGroups.includes(noKelompok) && (
+                  <button 
+                    onClick={() => downloadPDFPerKelompok(noKelompok)}
+                    className="bg-white hover:bg-slate-50 text-black border border-slate-200 px-4 py-2 rounded-lg font-bold text-[10px] transition-all shadow-sm flex items-center gap-2 no-print"
+                  >
+                    📩 UNDUH KELOMPOK {noKelompok}
+                  </button>
+                )}
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-black shadow-sm">
-                <table className="w-full border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-slate-950 text-white">
-                      <th className="border border-black p-3">Hari/Tanggal</th>
-                      <th className="border border-black p-3">Nama</th>
-                      <th className="border border-black p-3">NPM</th>
-                      <th className="border border-black p-3">Kegiatan</th>
-                      <th className="border border-black p-3">Keterangan</th>
-                      <th className="border border-black p-3">Dokumentasi</th>
-                      <th className="border border-black p-3 no-print">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {kelompokGroups[noKelompok].map((row: any) => (
-                      <tr key={row.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="border border-black p-3 text-center">{row.tanggal}</td>
-                        <td className="border border-black p-3 text-center font-bold uppercase">{row.nama}</td>
-                        <td className="border border-black p-3 text-center font-mono">{row.npm}</td>
-                        <td className="border border-black p-3 italic text-center text-slate-600">({row.kegiatan})</td>
-                        <td className="border border-black p-3 text-center">{row.keterangan}</td>
-                        <td className="border border-black p-3 text-center">
-                          {/* Logika baru: Handler onError agar UI tidak rusak jika foto format HEIC/Gagal fetch */}
-                          {row.foto ? (
-                            <img 
-                              src={row.foto} 
-                              className="w-24 h-16 object-cover rounded-md mx-auto shadow-sm" 
-                              alt="Bukti" 
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = "https://via.placeholder.com/150?text=Format+Error";
-                              }}
-                            />
-                          ) : (
-                            <span className="text-slate-400 italic">Tanpa Foto</span>
-                          )}
-                        </td>
-                        <td className="border border-black p-3 text-center no-print">
-                          <div className="flex flex-col gap-2">
-                             <button 
-                              onClick={() => handleHapusData(row.id)}
-                              className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white px-3 py-1 rounded-lg font-bold transition-all border border-red-100"
-                            >
-                              Hapus
-                            </button>
-                          </div>
-                        </td>
+              {/* LOGIKA BARU: Kondisi apakah data ditampilkan atau dikunci */}
+              {!unlockedGroups.includes(noKelompok) ? (
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-8 text-center shadow-inner">
+                  <div className="max-w-xs mx-auto">
+                    <span className="text-2xl">🔒</span>
+                    <h3 className="text-sm font-bold mt-2">Data Terkunci</h3>
+                    <p className="text-[10px] text-slate-400 mb-4 uppercase tracking-wider">Masukkan password kelompok untuk akses</p>
+                    <div className="flex gap-2">
+                      <input 
+                        type="password" 
+                        placeholder="Password..."
+                        className="flex-1 p-2 border border-slate-300 rounded-lg text-xs focus:ring-2 ring-blue-500 outline-none"
+                        onChange={(e) => setPassInput({...passInput, [noKelompok]: e.target.value})}
+                        onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword(noKelompok)}
+                      />
+                      <button 
+                        onClick={() => handleVerifyPassword(noKelompok)}
+                        className="bg-slate-900 text-white px-4 py-2 rounded-lg text-[10px] font-bold hover:bg-blue-600 transition-colors"
+                      >
+                        BUKA
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-black shadow-sm">
+                  <table className="w-full border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-950 text-white">
+                        <th className="border border-black p-3">Hari/Tanggal</th>
+                        <th className="border border-black p-3">Nama</th>
+                        <th className="border border-black p-3">NPM</th>
+                        <th className="border border-black p-3">Kegiatan</th>
+                        <th className="border border-black p-3">Keterangan</th>
+                        <th className="border border-black p-3">Dokumentasi</th>
+                        <th className="border border-black p-3 no-print">Aksi</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {kelompokGroups[noKelompok].map((row: any) => (
+                        <tr key={row.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="border border-black p-3 text-center">{row.tanggal}</td>
+                          <td className="border border-black p-3 text-center font-bold uppercase">{row.nama}</td>
+                          <td className="border border-black p-3 text-center font-mono">{row.npm}</td>
+                          <td className="border border-black p-3 italic text-center text-slate-600">({row.kegiatan})</td>
+                          <td className="border border-black p-3 text-center">{row.keterangan}</td>
+                          <td className="border border-black p-3 text-center">
+                            {row.foto ? (
+                              <img 
+                                src={row.foto} 
+                                className="w-24 h-16 object-cover rounded-md mx-auto shadow-sm" 
+                                alt="Bukti" 
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = "https://via.placeholder.com/150?text=Format+Error";
+                                }}
+                              />
+                            ) : (
+                              <span className="text-slate-400 italic">Tanpa Foto</span>
+                            )}
+                          </td>
+                          <td className="border border-black p-3 text-center no-print">
+                            <div className="flex flex-col gap-2">
+                               <button 
+                                onClick={() => handleHapusData(row.id)}
+                                className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white px-3 py-1 rounded-lg font-bold transition-all border border-red-100"
+                              >
+                                Hapus
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           ))
         )}
