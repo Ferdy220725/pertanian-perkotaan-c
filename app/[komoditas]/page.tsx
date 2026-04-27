@@ -57,6 +57,9 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
   const supabase = createClient();
   const komoditasRaw = decodeURIComponent(params.komoditas);
 
+  // LOGIKA BARU: State untuk menampung banyak pengamat
+  const [selectedObservers, setSelectedObservers] = useState<any[]>([]);
+
   const [formData, setFormData] = useState({
     nama: '',
     npm: '',
@@ -69,15 +72,33 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
 
   const [loading, setLoading] = useState(false);
 
-  // Auto-fill NPM saat nama dipilih (Logika Tetap)
-  const handleSelectMahasiswa = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  // LOGIKA BARU: Tambah pengamat ke daftar (Multiple Select)
+  const handleAddObserver = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedNama = e.target.value;
     const mhs = DAFTAR_MAHASISWA.find(item => item.nama === selectedNama);
-    if (mhs) {
-      setFormData({ ...formData, nama: mhs.nama, npm: mhs.npm });
-    } else {
-      setFormData({ ...formData, nama: '', npm: '' });
+    
+    if (mhs && !selectedObservers.find(o => o.npm === mhs.npm)) {
+      const newObservers = [...selectedObservers, mhs];
+      setSelectedObservers(newObservers);
+      
+      // Update string untuk preview (tetap menjaga konsistensi formData)
+      setFormData({
+        ...formData,
+        nama: newObservers.map(o => o.nama).join(', '),
+        npm: newObservers.map(o => o.npm).join(', ')
+      });
     }
+  };
+
+  // LOGIKA BARU: Hapus pengamat dari daftar
+  const removeObserver = (npm: string) => {
+    const filtered = selectedObservers.filter(o => o.npm !== npm);
+    setSelectedObservers(filtered);
+    setFormData({
+      ...formData,
+      nama: filtered.map(o => o.nama).join(', '),
+      npm: filtered.map(o => o.npm).join(', ')
+    });
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -93,10 +114,10 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (selectedObservers.length === 0) return alert("Pilih minimal 1 nama pengamat!");
     if (!formData.foto) return alert("Wajib upload foto dokumentasi!");
     setLoading(true);
 
-    // LOGIKA SISIPAN: Sinkronisasi nama komoditas agar sesuai standar SQL/Check Constraint
     let komoditasFix = komoditasRaw;
     if (komoditasRaw.toLowerCase().includes("kol")) {
       komoditasFix = "Bunga Kol";
@@ -105,7 +126,7 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
     try {
       const { error } = await supabase.from('logbook').insert([{
         ...formData,
-        komoditas: komoditasFix // Menggunakan data yang sudah disinkronkan
+        komoditas: komoditasFix
       }]);
 
       if (error) throw error;
@@ -129,30 +150,39 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Dropdown Nama Mahasiswa */}
+          {/* Dropdown Nama Mahasiswa (Multiple) */}
           <div>
-            <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Nama Mahasiswa</label>
+            <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Pilih Pengamat (Bisa {'>'}1)</label>
             <select 
-              required
               className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-600 rounded-3xl outline-none transition-all appearance-none cursor-pointer font-bold text-sm"
-              onChange={handleSelectMahasiswa}
-              value={formData.nama}
+              onChange={handleAddObserver}
+              value=""
             >
-              <option value="">-- Pilih Nama Kamu --</option>
+              <option value="">-- Tambah Nama Pengamat --</option>
               {DAFTAR_MAHASISWA.map((mhs, idx) => (
                 <option key={idx} value={mhs.nama}>{mhs.nama}</option>
               ))}
             </select>
+
+            {/* LOGIKA BARU: Tampilan Tag Nama yang terpilih */}
+            <div className="flex flex-wrap gap-2 mt-3 px-2">
+              {selectedObservers.map((o) => (
+                <div key={o.npm} className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-[10px] font-black flex items-center gap-2 border border-blue-100">
+                  {o.nama}
+                  <button type="button" onClick={() => removeObserver(o.npm)} className="hover:text-red-600 text-lg leading-none">&times;</button>
+                </div>
+              ))}
+            </div>
           </div>
 
-          {/* NPM Terisi Otomatis */}
+          {/* NPM Terisi Otomatis (Preview String) */}
           <div>
-            <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">NPM (Otomatis)</label>
+            <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">NPM Pengamat</label>
             <input 
               type="text" readOnly
-              className="w-full p-4 bg-slate-100 border-none rounded-3xl outline-none font-mono text-slate-500 text-sm"
+              className="w-full p-4 bg-slate-100 border-none rounded-3xl outline-none font-mono text-slate-500 text-[10px]"
               value={formData.npm}
-              placeholder="Pilih nama untuk isi NPM..."
+              placeholder="NPM akan muncul otomatis di sini..."
             />
           </div>
 
