@@ -5,13 +5,90 @@ import Link from 'next/link';
 export default function Home() {
   const [showGuide, setShowGuide] = useState(false);
 
+  // --- LOGIKA BARU: STATE IDENTITAS & JADWAL ---
+  const [showGroupInput, setShowGroupInput] = useState(false);
+  const [inputKelompok, setInputKelompok] = useState("");
+  const [groupNumber, setGroupNumber] = useState("");
+  const [showJadwalLock, setShowJadwalLock] = useState(false);
+  const [currentTask, setCurrentTask] = useState<{ type: string, msg: string, detail: React.ReactNode } | null>(null);
+
+  // Data Jadwal Universal
+  const JADWAL_PUPUK = ["2026-04-28", "2026-05-02", "2026-05-06", "2026-05-10", "2026-05-14", "2026-05-18", "2026-05-22", "2026-05-26", "2026-05-30", "2026-06-03"];
+  const JADWAL_PESTISIDA = ["2026-04-28", "2026-05-05", "2026-05-12", "2026-05-19", "2026-05-26", "2026-06-02"];
+
   // LOGIKA: Cek apakah user pernah menutup panduan secara permanen
   useEffect(() => {
+    // 1. Cek Identitas Kelompok
+    const savedGroup = localStorage.getItem('agrotek_group_identity');
+    if (!savedGroup) {
+      setShowGroupInput(true);
+    } else {
+      setGroupNumber(savedGroup);
+      checkDailyJadwal();
+    }
+
+    // 2. Cek Panduan (Logika Asli)
     const isGuideHidden = localStorage.getItem('hideAgrotekGuide');
     if (!isGuideHidden) {
       setShowGuide(true);
     }
   }, []);
+
+  // --- LOGIKA BARU: FUNGSI PENGECEKAN JADWAL ---
+  const checkDailyJadwal = () => {
+    // Menggunakan localeDateString agar sinkron dengan waktu real-time user (WIB)
+    const today = new Date().toLocaleDateString('en-CA'); 
+    const hasFinishedToday = localStorage.getItem(`finished_task_${today}`);
+
+    if (hasFinishedToday) return; 
+
+    const isPupukDay = JADWAL_PUPUK.includes(today);
+    const isPestisidaDay = JADWAL_PESTISIDA.includes(today);
+
+    if (isPupukDay || isPestisidaDay) {
+      setCurrentTask({
+        type: isPupukDay && isPestisidaDay ? "Pupuk & Pestisida" : isPupukDay ? "Pupuk" : "Pestisida",
+        msg: isPupukDay && isPestisidaDay ? "Hari ini jadwal Pemupukan & Pestisida!" : isPupukDay ? "Hari ini jadwal Pemberian Pupuk!" : "Hari ini jadwal Penyemprotan Pestisida!",
+        detail: (
+          <div className="space-y-4">
+            {/* Hanya tampil jika hari ini jadwal Pupuk */}
+            {isPupukDay && (
+              <div className={isPestisidaDay ? "border-b border-slate-200 pb-3" : ""}>
+                <p className="font-bold text-emerald-700">🌱 Pemberian Pupuk</p>
+                <p className="text-xs text-slate-600 leading-relaxed">Dilakukan setiap 4 hari sekali dengan dosis 5 sendok makan pupuk per 10 liter air. Pengaplikasian dilakukan secukupnya, dengan ketentuan 1 gayung digunakan untuk 2–3 tanaman.</p>
+              </div>
+            )}
+            
+            {/* Hanya tampil jika hari ini jadwal Pestisida */}
+            {isPestisidaDay && (
+              <div className="pt-1">
+                <p className="font-bold text-red-700">🐛 Penyemprotan Pestisida</p>
+                <p className="text-xs text-slate-600 leading-relaxed">Dilakukan setiap 1 minggu sekali untuk mencegah dan mengendalikan hama tanaman secara rutin.</p>
+              </div>
+            )}
+          </div>
+        )
+      });
+      setShowJadwalLock(true);
+    }
+  };
+
+  const handleSaveGroup = () => {
+    if (inputKelompok.trim() !== "") {
+      localStorage.setItem('agrotek_group_identity', inputKelompok);
+      setGroupNumber(inputKelompok);
+      setShowGroupInput(false);
+      checkDailyJadwal();
+    } else {
+      alert("Mohon masukkan nomor kelompok Anda.");
+    }
+  };
+
+  const handleFinishTask = () => {
+    const today = new Date().toLocaleDateString('en-CA');
+    localStorage.setItem(`finished_task_${today}`, 'true');
+    setShowJadwalLock(false);
+  };
 
   const closeGuidePermanently = () => {
     localStorage.setItem('hideAgrotekGuide', 'true');
@@ -28,6 +105,63 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#F8F9FA] p-5 md:p-10 font-sans text-slate-900 antialiased overflow-x-hidden">
       
+      {/* MODAL IDENTITAS KELOMPOK */}
+      {showGroupInput && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-10 text-center border-4 border-[#800020]">
+            <span className="text-5xl mb-4 block">👋</span>
+            <h2 className="text-2xl font-black uppercase tracking-tighter mb-2 text-slate-900">Selamat Datang!</h2>
+            <p className="text-sm text-slate-500 mb-8">Sebelum melanjutkan, beri tahu kami Anda dari kelompok berapa?</p>
+            <input 
+              type="number" 
+              placeholder="Contoh: 1"
+              value={inputKelompok}
+              onChange={(e) => setInputKelompok(e.target.value)}
+              className="w-full p-4 border-2 border-slate-100 rounded-2xl mb-4 text-center text-xl font-bold focus:border-[#800020] outline-none transition-all text-slate-900"
+            />
+            <button 
+              onClick={handleSaveGroup}
+              className="w-full bg-[#800020] text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-black transition-all"
+            >
+              KONFIRMASI IDENTITAS
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL JADWAL LOCKDOWN */}
+      {showJadwalLock && !showGroupInput && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-[#800020]/90 backdrop-blur-md">
+          <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl p-10 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-2 bg-yellow-400"></div>
+            <div className="text-center mb-6">
+              <span className="text-5xl mb-4 block animate-bounce">
+                {currentTask?.type.includes("Pupuk") ? "🌱" : "🐛"}
+              </span>
+              <h2 className="text-xl font-black uppercase tracking-tight text-slate-900 italic">
+                Panggilan Aksi: Kelompok {groupNumber}
+              </h2>
+              <p className="text-sm font-bold text-[#800020] mt-1 uppercase tracking-widest">{currentTask?.msg}</p>
+            </div>
+
+            <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 mb-8">
+              <h3 className="text-[10px] font-black uppercase tracking-[.2em] text-slate-400 mb-4">Instruksi Khusus:</h3>
+              <div className="text-sm leading-relaxed text-slate-700">
+                {currentTask?.detail}
+              </div>
+            </div>
+
+            <button 
+              onClick={handleFinishTask}
+              className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-sm tracking-[.2em] hover:bg-green-600 transition-all flex items-center justify-center gap-3 shadow-xl"
+            >
+              SAYA SUDAH SELESAI MENGERJAKAN ✅
+            </button>
+            <p className="text-[9px] text-center text-slate-400 mt-4 uppercase font-bold tracking-widest">Akses website terkunci hingga tugas dilaporkan selesai.</p>
+          </div>
+        </div>
+      )}
+
       {/* MODAL PANDUAN */}
       {showGuide && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
@@ -37,43 +171,25 @@ export default function Home() {
             <article className="prose prose-slate max-w-none">
               <h2 className="text-2xl font-black tracking-tighter uppercase mb-4 text-[#800020]">📑 Panduan Penggunaan Sistem Logbook Agrotek C</h2>
               <p className="text-sm font-medium text-slate-500 mb-6">
-                Website ini dirancang untuk memudahkan kita monitoring pertumbuhan & perkembangan tanaman di rooftop/stasiun klimatologi secara kolektif dan sinkron ke cloud.
+                Website ini dirancang untuk memudahkan kita monitoring pertumbuhan & perkembangan tanaman di rooftop secara kolektif.
               </p>
               
               <div className="space-y-6 text-sm leading-relaxed">
                 <section>
                   <h3 className="font-bold text-slate-900 uppercase tracking-wider text-xs">1. Cara Mengisi Logbook Harian</h3>
-                  <p className="text-slate-600 mt-1">
-                    Bagian ini digunakan setiap kali kamu melakukan pengamatan atau pemeliharaan di rooftop/stasiun klimatologi.
-                  </p>
+                  <p className="text-slate-600 mt-1">Bagian ini digunakan setiap kali kamu melakukan pengamatan di rooftop.</p>
                   <ul className="list-disc ml-5 space-y-1 text-slate-600">
-                    <li><b>Pilih Komoditas:</b> Di halaman utama, klik tombol komoditas (Cabai, Kol, Seledri, Tomat).</li>
-                    <li><b>Input Nama Pengamat:</b> Klik dropdown, pilih namamu. Bisa pilih lebih dari 1 jika bersama teman (Nama akan muncul sebagai "tag" biru).</li>
-                    <li><b>NPM Otomatis:</b> NPM akan terisi secara kolektif sesuai nama yang dipilih.</li>
-                    <li><b>Detail & Dokumentasi:</b> Isi kelompok, tanggal, kegiatan, dan keterangan.</li>
-                    <li><b>Ketentuan Foto:</b> Wajib upload foto dokumentasi format <b>JPG</b>, ukuran maksimal <b>2 MB</b>, dan rasio foto <b>1:1</b>.</li>
+                    <li><b>Pilih Komoditas:</b> Klik tombol komoditas di halaman utama.</li>
+                    <li><b>Input Nama Pengamat:</b> Klik dropdown, pilih nama yang bertugas.</li>
+                    <li><b>Ketentuan Foto:</b> Format JPG, maksimal 2 MB, rasio 1:1.</li>
                   </ul>
                 </section>
 
-                <section>
-                  <h3 className="font-bold text-slate-900 uppercase tracking-wider text-xs">2. Riwayat & PDF</h3>
-                  <p className="text-slate-600 mt-1">
-                    Gunakan password yang telah diberikan oleh komting. Di sini kamu bisa cek data atau unduh format PDF otomatis.
-                  </p>
-                </section>
-
-                <section>
-                  <h3 className="font-bold text-slate-900 uppercase tracking-wider text-xs">3. Laporan Mingguan (.docx)</h3>
-                  <p className="text-slate-600 mt-1">
-                    Input data pertumbuhan & perkembangan minggu 1 & 2, lalu gunakan fitur <b>"✨ Gunakan Narasi Otomatis Rooftop"</b> untuk membuat kesimpulan (opsional).
-                  </p>
-                </section>
-
                 <div className="bg-amber-50 p-5 rounded-3xl border border-amber-100">
-                  <h3 className="font-black text-amber-800 uppercase tracking-wider text-[10px] mb-2">⚠️ Waktu Pengisian & Rutinitas Penyiraman</h3>
+                  <h3 className="font-black text-amber-800 uppercase tracking-wider text-[10px] mb-2">⚠️ Rutinitas Penyiraman</h3>
                   <ul className="list-none space-y-2 text-amber-900 font-medium">
-                    <li>💧 <b>Wajib Siram 2x Sehari:</b> Pagi dan Sore (terutama jika tidak hujan).</li>
-                    <li>🕒 <b>Logbook Diisi Sore:</b> Dilakukan setelah penyiraman kedua selesai sebagai laporan final harian.</li>
+                    <li>💧 <b>Wajib Siram 2x Sehari:</b> Pagi dan Sore.</li>
+                    <li>🕒 <b>Logbook Diisi Sore:</b> Setelah penyiraman kedua selesai.</li>
                   </ul>
                 </div>
               </div>
@@ -110,31 +226,23 @@ export default function Home() {
             </p>
           </div>
           
-          {/* USER PROFILE, PANDUAN & ADMIN BUTTON */}
           <div className="flex flex-col items-end gap-2 self-start md:self-auto">
             <div className="flex items-center gap-4 bg-white p-2 pr-5 rounded-full shadow-sm border border-slate-100">
               <div className="w-10 h-10 rounded-full bg-[#800020] flex items-center justify-center text-white font-bold shadow-md shadow-[#800020]/20">A</div>
               <div className="text-sm">
-                <p className="font-bold text-slate-800 leading-none">Sobat Agrotek C</p>
+                <p className="font-bold text-slate-800 leading-none">Kelompok {groupNumber || '...'}</p>
                 <p className="text-[10px] text-green-600 font-bold uppercase mt-1 flex items-center gap-1.5">
                   <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Online
                 </p>
               </div>
             </div>
             
-            {/* LOGIKA BARU: Menu Navigasi Tambahan */}
             <div className="flex items-center gap-3 mr-4">
-              <Link 
-                href="/admin-control" 
-                className="text-[9px] font-black uppercase tracking-widest text-slate-300 hover:text-[#800020] transition-colors"
-              >
+              <Link href="/admin-control" className="text-[9px] font-black uppercase tracking-widest text-slate-300 hover:text-[#800020] transition-colors">
                 🔒 Admin Panel
               </Link>
               <span className="w-[1px] h-3 bg-slate-200"></span>
-              <button 
-                onClick={() => setShowGuide(true)}
-                className="text-[10px] font-black uppercase tracking-widest text-[#800020] hover:underline transition-all"
-              >
+              <button onClick={() => setShowGuide(true)} className="text-[10px] font-black uppercase tracking-widest text-[#800020] hover:underline transition-all">
                 📖 Panduan Penggunaan
               </button>
             </div>
