@@ -1,8 +1,11 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+// Import Supabase client
+import { createClient } from '@/utils/supabase/client';
 
 export default function Home() {
+  const supabase = createClient();
   const [showGuide, setShowGuide] = useState(false);
 
   // --- LOGIKA BARU: STATE IDENTITAS & JADWAL ---
@@ -11,6 +14,14 @@ export default function Home() {
   const [groupNumber, setGroupNumber] = useState("");
   const [showJadwalLock, setShowJadwalLock] = useState(false);
   const [currentTask, setCurrentTask] = useState<{ type: string, msg: string, detail: React.ReactNode } | null>(null);
+
+  // --- LOGIKA BARU: STATE MAHASISWA TERRAJIN ---
+  const [weeklyHero, setWeeklyHero] = useState<{
+    nama: string,
+    npm: string,
+    kelompok: string,
+    count: number
+  } | null>(null);
 
   // Data Jadwal Universal
   const JADWAL_PUPUK = ["2026-04-28", "2026-05-02", "2026-05-06", "2026-05-10", "2026-05-14", "2026-05-18", "2026-05-22", "2026-05-26", "2026-05-30", "2026-06-03"];
@@ -32,11 +43,86 @@ export default function Home() {
     if (!isGuideHidden) {
       setShowGuide(true);
     }
+
+    // 3. Ambil Data Mahasiswa Ter-Rajin (Mingguan)
+    fetchWeeklyHero();
   }, []);
+
+  // --- LOGIKA BARU: FUNGSI AMBIL PEMENANG MINGGUAN (DENGAN FALLBACK MINGGU LALU) ---
+  const fetchWeeklyHero = async () => {
+    try {
+      const now = new Date();
+      
+      // A. LOGIKA MINGGU LALU (Tujuan Utama)
+      const lastMonday = new Date(now);
+      lastMonday.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1) - 7);
+      lastMonday.setHours(0, 0, 0, 0);
+
+      const lastSunday = new Date(lastMonday);
+      lastSunday.setDate(lastMonday.getDate() + 6);
+      lastSunday.setHours(23, 59, 59, 999);
+
+      // B. LOGIKA MINGGU BERJALAN (Untuk Fallback Minggu Pertama)
+      const thisMonday = new Date(now);
+      thisMonday.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1));
+      thisMonday.setHours(0, 0, 0, 0);
+
+      // Coba ambil data minggu lalu dulu
+      let { data, error } = await supabase
+        .from('logbook')
+        .select('nama, npm, kelompok, created_at')
+        .gte('created_at', lastMonday.toISOString())
+        .lte('created_at', lastSunday.toISOString());
+
+      if (error) throw error;
+
+      // FALLBACK: Jika minggu lalu kosong (karena ini minggu pertama), ambil data minggu berjalan
+      if (!data || data.length === 0) {
+        const { data: currentData, error: currentError } = await supabase
+          .from('logbook')
+          .select('nama, npm, kelompok, created_at')
+          .gte('created_at', thisMonday.toISOString())
+          .lte('created_at', now.toISOString());
+        
+        if (currentError) throw currentError;
+        data = currentData;
+      }
+
+      if (data && data.length > 0) {
+        const counts: { [key: string]: { nama: string, npm: string, kelompok: string, count: number, lastEntry: string } } = {};
+        
+        data.forEach(log => {
+          const userKey = log.npm;
+          if (!counts[userKey]) {
+            counts[userKey] = { 
+              nama: log.nama, 
+              npm: log.npm, 
+              kelompok: log.kelompok.toString(), 
+              count: 0, 
+              lastEntry: log.created_at 
+            };
+          }
+
+          counts[userKey].count += 1;
+          if (new Date(log.created_at) > new Date(counts[userKey].lastEntry)) {
+            counts[userKey].lastEntry = log.created_at;
+          }
+        });
+
+        const sorted = Object.values(counts).sort((a, b) => {
+          if (b.count !== a.count) return b.count - a.count;
+          return new Date(b.lastEntry).getTime() - new Date(a.lastEntry).getTime();
+        });
+
+        if (sorted[0]) setWeeklyHero(sorted[0]);
+      }
+    } catch (err) {
+      console.error("Error Hero:", err);
+    }
+  };
 
   // --- LOGIKA BARU: FUNGSI PENGECEKAN JADWAL ---
   const checkDailyJadwal = () => {
-    // Menggunakan localeDateString agar sinkron dengan waktu real-time user (WIB)
     const today = new Date().toLocaleDateString('en-CA'); 
     const hasFinishedToday = localStorage.getItem(`finished_task_${today}`);
 
@@ -51,15 +137,12 @@ export default function Home() {
         msg: isPupukDay && isPestisidaDay ? "Hari ini jadwal Pemupukan & Pestisida!" : isPupukDay ? "Hari ini jadwal Pemberian Pupuk!" : "Hari ini jadwal Penyemprotan Pestisida!",
         detail: (
           <div className="space-y-4">
-            {/* Hanya tampil jika hari ini jadwal Pupuk */}
             {isPupukDay && (
               <div className={isPestisidaDay ? "border-b border-slate-200 pb-3" : ""}>
                 <p className="font-bold text-emerald-700">🌱 Pemberian Pupuk</p>
                 <p className="text-xs text-slate-600 leading-relaxed">Dilakukan setiap 4 hari sekali dengan dosis 5 sendok makan pupuk per 10 liter air. Pengaplikasian dilakukan secukupnya, dengan ketentuan 1 gayung digunakan untuk 2–3 tanaman.</p>
               </div>
             )}
-            
-            {/* Hanya tampil jika hari ini jadwal Pestisida */}
             {isPestisidaDay && (
               <div className="pt-1">
                 <p className="font-bold text-red-700">🐛 Penyemprotan Pestisida</p>
@@ -99,7 +182,7 @@ export default function Home() {
     { id: 'cabai', nama: 'Cabai rawit (Capsicum frutescens L.)', icon: '🌶️', warna: 'bg-red-50 text-red-600 border-red-100' },
     { id: 'bunga-kol', nama: 'Bunga Kol (Brassica oleracea var. botrytis L.)', icon: '🥦', warna: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
     { id: 'tomat', nama: 'Tomat (Solanum lycopersicum)', icon: '🍅', warna: 'bg-orange-50 text-orange-600 border-orange-100' },
-    { id: 'seledri', nama: 'Seledri (Apium graveolens L.)', icon: '🌿', warna: 'bg-green-50 text-green-600 border-green-100' },
+    { id: 'seledri', nama: 'Seledri (Apium groweolens L.)', icon: '🌿', warna: 'bg-green-50 text-green-600 border-green-100' },
   ];
 
   return (
@@ -230,7 +313,11 @@ export default function Home() {
             <div className="flex items-center gap-4 bg-white p-2 pr-5 rounded-full shadow-sm border border-slate-100">
               <div className="w-10 h-10 rounded-full bg-[#800020] flex items-center justify-center text-white font-bold shadow-md shadow-[#800020]/20">A</div>
               <div className="text-sm">
-                <p className="font-bold text-slate-800 leading-none">Kelompok {groupNumber || '...'}</p>
+                <p className="font-bold text-slate-800 leading-none">
+                  Kelompok {groupNumber || '...'} 
+                  {/* EMOTE API LOGIC: Tampil jika kelompok ini adalah kelompok pemenang mingguan */}
+                  {weeklyHero && weeklyHero.kelompok === groupNumber && <span className="ml-1 animate-pulse">🔥</span>}
+                </p>
                 <p className="text-[10px] text-green-600 font-bold uppercase mt-1 flex items-center gap-1.5">
                   <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Online
                 </p>
@@ -248,6 +335,48 @@ export default function Home() {
             </div>
           </div>
         </header>
+
+        {/* --- WEEKLY HERO SECTION (Unique & Luxurious) --- */}
+        {weeklyHero && (
+          <div className="mb-10 animate-in fade-in slide-in-from-top-4 duration-1000">
+             <div className="relative overflow-hidden bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 rounded-[2.5rem] p-6 md:p-10 border-2 border-yellow-500/30 shadow-[0_20px_50px_rgba(0,0,0,0.2)]">
+                {/* Efek Kilau Gold */}
+                <div className="absolute top-0 left-[-100%] w-full h-full bg-gradient-to-r from-transparent via-yellow-500/10 to-transparent skew-x-[-20deg] animate-[shimmer_5s_infinite]"></div>
+                
+                <div className="relative z-10 flex flex-col md:flex-row items-center gap-8">
+                   <div className="flex-shrink-0 relative">
+                      <div className="w-20 h-20 md:w-24 md:h-24 bg-gradient-to-br from-yellow-400 to-yellow-700 rounded-3xl flex items-center justify-center text-4xl shadow-lg border-4 border-slate-900 transform -rotate-3 rotate-3 hover:rotate-0 transition-transform">
+                        🏆
+                      </div>
+                      <div className="absolute -bottom-2 -right-2 bg-white text-black text-[10px] font-black px-3 py-1 rounded-full shadow-sm border border-yellow-500">
+                        HERO
+                      </div>
+                   </div>
+                   
+                   <div className="text-center md:text-left space-y-3">
+                      <h3 className="text-[10px] font-black uppercase tracking-[.4em] text-yellow-500/80">Mahasiswa Ter-Rajin Minggu Ini</h3>
+                      <p className="text-white text-sm md:text-base font-medium leading-relaxed italic">
+                        "SELAMAT, <span className="text-yellow-400 font-black not-italic underline decoration-yellow-500/50 underline-offset-4">{weeklyHero.nama}</span>! Kamu mahasiswa ter rajin minggu ini. Effortmu secerah sinar matahari pagi. Pertahankan ritme kerjamu!"
+                      </p>
+                      <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-4">
+                         <div className="bg-white/5 backdrop-blur-md border border-white/10 px-4 py-2 rounded-xl">
+                            <p className="text-[8px] text-slate-400 uppercase font-bold">NPM</p>
+                            <p className="text-xs text-white font-mono">{weeklyHero.npm}</p>
+                         </div>
+                         <div className="bg-white/5 backdrop-blur-md border border-white/10 px-4 py-2 rounded-xl">
+                            <p className="text-[8px] text-slate-400 uppercase font-bold">Kelompok</p>
+                            <p className="text-xs text-white font-bold">{weeklyHero.kelompok} <span className="animate-pulse">🔥</span></p>
+                         </div>
+                         <div className="bg-white/5 backdrop-blur-md border border-white/10 px-4 py-2 rounded-xl">
+                            <p className="text-[8px] text-slate-400 uppercase font-bold">Total Log</p>
+                            <p className="text-xs text-white font-bold">{weeklyHero.count} Aktivitas</p>
+                         </div>
+                      </div>
+                   </div>
+                </div>
+             </div>
+          </div>
+        )}
 
         {/* MAIN NAVIGATION GRID */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6 mb-12">
@@ -324,6 +453,14 @@ export default function Home() {
           </p>
         </footer>
       </div>
+      
+      {/* Tambahkan CSS Animasi Shimmer untuk kartu mewah */}
+      <style jsx global>{`
+        @keyframes shimmer {
+          0% { left: -100%; }
+          100% { left: 100%; }
+        }
+      `}</style>
     </main>
   );
 }
