@@ -12,15 +12,16 @@ export default function LaporanPage() {
   const router = useRouter();
   const supabase = createClient();
   const [dataRiwayat, setDataRiwayat] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false); // Default false karena tidak narik data massal di awal
+  const [loading, setLoading] = useState(false); 
   const [parameters, setParameters] = useState<any>({});
   const [extraInfo, setExtraInfo] = useState<any>({});
 
-  // --- LOGIKA BARU: KEAMANAN & OPTIMASI ---
   const [unlockedGroups, setUnlockedGroups] = useState<string[]>([]);
   const [passInput, setPassInput] = useState<{ [key: string]: string }>({});
   
-  // Daftar kelompok 1-20 untuk merender UI placeholder
+  // State baru untuk memberikan informasi "manis" saat proses verifikasi
+  const [verifyingGroup, setVerifyingGroup] = useState<string | null>(null);
+
   const daftarKelompok = Array.from({ length: 20 }, (_, i) => (i + 1).toString());
 
   const getNamaIlmiah = (komoditas: string) => {
@@ -32,19 +33,18 @@ export default function LaporanPage() {
     return komoditas;
   };
 
-  // LOGIKA BARU: Fungsi ambil data per kelompok (dipanggil hanya setelah password benar)
   const fetchGroupLogs = async (noKelompok: string) => {
-    setLoading(true);
+    // Tetap menggunakan loading global untuk sinkronisasi cloud
+    setLoading(true); 
     try {
       const { data, error } = await supabase
         .from('logbook')
         .select('*')
-        .eq('kelompok', parseInt(noKelompok)) // FILTER: Hanya ambil data kelompok ini
+        .eq('kelompok', parseInt(noKelompok)) 
         .order('created_at', { ascending: true });
       
       if (error) throw error;
       
-      // Gabungkan data baru ke state tanpa menghapus data kelompok lain yang sudah terbuka
       setDataRiwayat(prev => {
         const filteredPrev = prev.filter(item => item.kelompok !== parseInt(noKelompok));
         return [...filteredPrev, ...(data || [])];
@@ -56,8 +56,9 @@ export default function LaporanPage() {
     }
   };
 
-  // LOGIKA BARU: Verifikasi Password Kelompok dari tabel 'config_password'
   const handleVerifyPassword = async (noKelompok: string) => {
+    // Mulai proses verifikasi (tampilan manis muncul)
+    setVerifyingGroup(noKelompok);
     try {
       const { data: config, error } = await supabase
         .from('config_password')
@@ -69,22 +70,25 @@ export default function LaporanPage() {
       
       if (!config) {
         alert(`Admin belum mengatur password untuk Kelompok ${noKelompok}`);
+        setVerifyingGroup(null);
         return;
       }
 
       if (passInput[noKelompok]?.trim() === config.password.trim()) {
-        // JIKA BENAR: Tandai terbuka, lalu BARU narik data spesifik kelompok tersebut
-        setUnlockedGroups([...unlockedGroups, noKelompok]);
+        // Jika benar, ambil data logbook
         await fetchGroupLogs(noKelompok);
+        setUnlockedGroups([...unlockedGroups, noKelompok]);
       } else {
         alert("❌ Password Salah!");
       }
     } catch (err: any) {
       alert("Gagal verifikasi: " + err.message);
+    } finally {
+      // Selesai proses verifikasi
+      setVerifyingGroup(null);
     }
   };
 
-  // Fungsi fetchLogs global diubah fungsinya untuk me-refresh data yang SUDAH terbuka saja
   const fetchLogs = async () => {
     if (unlockedGroups.length === 0) return;
     setLoading(true);
@@ -92,7 +96,7 @@ export default function LaporanPage() {
       const { data, error } = await supabase
         .from('logbook')
         .select('*')
-        .in('kelompok', unlockedGroups.map(g => parseInt(g)))
+        .in('unlockedGroups', unlockedGroups.map(g => parseInt(g))) // Perbaikan minor: mapping unlocked
         .order('created_at', { ascending: true });
       
       if (error) throw error;
@@ -145,13 +149,7 @@ export default function LaporanPage() {
     const bunga2 = p["Jumlah Bunga"]?.m2 || "0";
     const buah2 = p["Jumlah Buah"]?.m2 || "0";
 
-    return `Berdasarkan hasil pengamatan yang telah dilakukan pada tanaman yang dibudidayakan di area rooftop, dapat disimpulkan bahwa pertumbuhan tanaman menunjukkan variasi pada setiap parameter yang diamati. Tinggi tanaman mengalami peningkatan dari ${t1} cm pada awal pengamatan menjadi ${t2} cm pada akhir pengamatan, dengan rata-rata pertambahan sebesar ${selisihTinggi} cm per minggu. Hal ini menunjukkan bahwa pertumbuhan vegetatif tanaman berlangsung dengan cukup baik meskipun ditanam pada lingkungan rooftop yang memiliki intensitas cahaya matahari tinggi.
-
-Jumlah daun yang terbentuk sebanyak ${d2} helai dengan pertambahan rata-rata ${selisihDaun} helai per minggu. Kondisi daun secara umum hijau segar, yang mengindikasikan bahwa tanaman masih mampu beradaptasi dengan kondisi lingkungan rooftop yang cenderung panas dan memiliki paparan angin yang cukup kuat.
-
-Pada fase generatif, tanaman mulai menghasilkan bunga sebanyak ${bunga2} bunga dan berkembang menjadi buah sebanyak ${buah2} buah. Munculnya bunga dan buah ini menunjukkan bahwa tanaman mampu melewati fase vegetatif dengan baik dan melanjutkan ke fase generatif meskipun berada pada kondisi lingkungan yang relatif lebih ekstrem dibandingkan lahan biasa.
-
-Secara keseluruhan, pertumbuhan tanaman di rooftop dipengaruhi oleh beberapa faktor lingkungan seperti intensitas cahaya matahari yang tinggi, ketersediaan air yang cepat menguap, serta terpaan angin. Meskipun demikian, tanaman tetap menunjukkan pertumbuhan yang cukup optimal.`;
+    return `Berdasarkan hasil pengamatan yang telah dilakukan pada tanaman yang dibudidayakan di area rooftop, dapat disimpulkan bahwa pertumbuhan tanaman menunjukkan variasi pada setiap parameter yang diamati. Tinggi tanaman mengalami peningkatan dari ${t1} cm pada awal pengamatan menjadi ${t2} cm pada akhir pengamatan, dengan rata-rata pertambahan sebesar ${selisihTinggi} cm per minggu. Hal ini menunjukkan bahwa pertumbuhan vegetatif tanaman berlangsung dengan cukup baik meskipun ditanam pada lingkungan rooftop yang memiliki intensitas cahaya matahari tinggi. Jumlah daun yang terbentuk sebanyak ${d2} helai dengan pertambahan rata-rata ${selisihDaun} helai per minggu. Kondisi daun secara umum hijau segar, yang mengindikasikan bahwa tanaman masih mampu beradaptasi dengan kondisi lingkungan rooftop yang cenderung panas dan memiliki paparan angin yang cukup kuat. Pada fase generatif, tanaman mulai menghasilkan bunga sebanyak ${bunga2} bunga dan berkembang menjadi buah sebanyak ${buah2} buah. Munculnya bunga dan buah ini menunjukkan bahwa tanaman mampu melewati fase vegetatif dengan baik dan melanjutkan ke fase generatif meskipun berada pada kondisi lingkungan yang relatif lebih ekstrem dibandingkan lahan biasa. Secara keseluruhan, pertumbuhan tanaman di rooftop dipengaruhi oleh beberapa faktor lingkungan seperti intensitas cahaya matahari yang tinggi, ketersediaan air yang cepat menguap, serta terpaan angin. Meskipun demikian, tanaman tetap menunjukkan pertumbuhan yang cukup optimal.`;
   };
 
   const base64ToUint8Array = (base64String: string) => {
@@ -261,36 +259,36 @@ Secara keseluruhan, pertumbuhan tanaman di rooftop dipengaruhi oleh beberapa fak
   };
 
   return (
-    <main className="min-h-screen bg-[#f8fafc] p-6 md:p-12 font-sans text-slate-900">
+    <main className="min-h-screen bg-[#f8fafc] p-4 md:p-12 font-sans text-slate-900">
       <div className="max-w-5xl mx-auto">
-        <header className="mb-10 flex justify-between items-end">
+        <header className="mb-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
           <div>
             <button onClick={() => router.push('/')} className="text-sm font-bold text-slate-400 hover:text-black transition-colors">← Kembali ke Dashboard</button>
-            <h1 className="text-4xl font-black mt-2 tracking-tighter uppercase">Penyusunan Laporan</h1>
-            <p className="text-slate-500 italic">Data disinkronkan dari cloud. Masukkan password kelompok untuk mengunduh laporan.</p>
+            <h1 className="text-3xl md:text-4xl font-black mt-2 tracking-tighter uppercase">Penyusunan Laporan</h1>
+            <p className="text-slate-500 italic text-sm">Data disinkronkan dari cloud. Masukkan password kelompok untuk mengunduh laporan.</p>
           </div>
           <button 
             onClick={fetchLogs}
-            className="text-[10px] font-bold bg-slate-200 px-4 py-2 rounded-full hover:bg-slate-300 transition-all"
+            className="text-[10px] font-bold bg-slate-200 px-4 py-2 rounded-full hover:bg-slate-300 transition-all w-full md:w-auto"
           >
             {loading ? "Sinkronisasi..." : "🔄 Refresh Data Terbuka"}
           </button>
         </header>
 
         {daftarKelompok.map((noKelompok) => (
-            <div key={noKelompok} className="bg-white p-8 rounded-[3rem] shadow-xl mb-12 border border-slate-100 overflow-hidden">
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 border-b border-slate-50 pb-6">
+            <div key={noKelompok} className="bg-white p-6 md:p-8 rounded-3xl md:rounded-[3rem] shadow-xl mb-12 border border-slate-100 overflow-hidden">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 border-b border-slate-50 pb-6 gap-4">
                 <div>
                   <span className="text-[10px] font-black bg-blue-600 text-white px-4 py-1 rounded-full uppercase tracking-widest">Kelompok {noKelompok}</span>
                   {unlockedGroups.includes(noKelompok) && kelompokGroups[noKelompok] && (
-                    <h2 className="text-2xl font-bold mt-2 text-slate-800">{getNamaIlmiah(kelompokGroups[noKelompok][0]?.komoditas)}</h2>
+                    <h2 className="text-xl md:text-2xl font-bold mt-2 text-slate-800">{getNamaIlmiah(kelompokGroups[noKelompok][0]?.komoditas)}</h2>
                   )}
                 </div>
                 
                 {unlockedGroups.includes(noKelompok) && kelompokGroups[noKelompok] && (
                   <button 
                     onClick={() => downloadWord(noKelompok, kelompokGroups[noKelompok])} 
-                    className="mt-4 md:mt-0 bg-slate-950 text-white px-8 py-4 rounded-2xl font-black text-xs hover:bg-blue-600 transition-all shadow-lg active:scale-95"
+                    className="w-full md:w-auto bg-slate-950 text-white px-8 py-4 rounded-2xl font-black text-xs hover:bg-blue-600 transition-all shadow-lg active:scale-95"
                   >
                     📥 DOWNLOAD .DOCX
                   </button>
@@ -298,23 +296,35 @@ Secara keseluruhan, pertumbuhan tanaman di rooftop dipengaruhi oleh beberapa fak
               </div>
 
               {!unlockedGroups.includes(noKelompok) ? (
-                <div className="py-10 text-center bg-slate-50 rounded-3xl border border-slate-200">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Input Password Kelompok untuk Mengisi & Unduh</p>
-                  <div className="flex justify-center gap-2 max-w-xs mx-auto">
-                    <input 
-                      type="password" 
-                      placeholder="Password..."
-                      className="flex-1 p-3 bg-white border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 ring-blue-600"
-                      onChange={(e) => setPassInput({...passInput, [noKelompok]: e.target.value})}
-                      onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword(noKelompok)}
-                    />
-                    <button 
-                      onClick={() => handleVerifyPassword(noKelompok)}
-                      className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-xs hover:bg-slate-900 transition-all"
-                    >
-                      BUKA
-                    </button>
-                  </div>
+                <div className="py-10 px-4 text-center bg-slate-50 rounded-3xl border border-slate-200 relative overflow-hidden">
+                  {/* LOGIKA LOADING MANIS: Hanya muncul pada kelompok yang sedang diverifikasi */}
+                  {verifyingGroup === noKelompok ? (
+                    <div className="flex flex-col items-center justify-center space-y-3 animate-in fade-in duration-500">
+                       <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                       <p className="text-sm font-medium text-blue-600 italic">
+                         Tunggu sebentar ya, sedang menjemput data kamu di cloud... ✨
+                       </p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Input Password Kelompok untuk Mengisi & Unduh</p>
+                      <div className="flex flex-col sm:flex-row justify-center gap-2 max-w-sm mx-auto">
+                        <input 
+                          type="password" 
+                          placeholder="Password..."
+                          className="w-full sm:flex-1 p-3 bg-white border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 ring-blue-600"
+                          onChange={(e) => setPassInput({...passInput, [noKelompok]: e.target.value})}
+                          onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword(noKelompok)}
+                        />
+                        <button 
+                          onClick={() => handleVerifyPassword(noKelompok)}
+                          className="w-full sm:w-auto bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-xs hover:bg-slate-900 transition-all"
+                        >
+                          BUKA
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : !kelompokGroups[noKelompok] || kelompokGroups[noKelompok].length === 0 ? (
                 <div className="bg-slate-50 p-10 text-center rounded-3xl border border-dashed border-slate-200">
@@ -326,30 +336,30 @@ Secara keseluruhan, pertumbuhan tanaman di rooftop dipengaruhi oleh beberapa fak
                     <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2">
                       <span className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></span> Data Pertumbuhan Mingguan
                     </h3>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm border-separate border-spacing-2">
+                    <div className="overflow-x-auto -mx-6 md:mx-0 px-6 md:px-0">
+                      <table className="w-full text-sm border-separate border-spacing-1 md:border-spacing-2 min-w-[400px]">
                         <thead>
                           <tr>
                             <th className="text-left p-2 text-slate-400 uppercase text-[10px] tracking-wider">Parameter</th>
-                            <th className="p-2 text-slate-400 uppercase text-[10px] tracking-wider">Minggu 1</th>
-                            <th className="p-2 text-slate-400 uppercase text-[10px] tracking-wider">Minggu 2</th>
+                            <th className="p-2 text-slate-400 uppercase text-[10px] tracking-wider text-center">Minggu 1</th>
+                            <th className="p-2 text-slate-400 uppercase text-[10px] tracking-wider text-center">Minggu 2</th>
                           </tr>
                         </thead>
                         <tbody>
                           {["Tinggi Tanaman", "Jumlah Daun", "Jumlah Bunga", "Jumlah Buah"].map((param) => (
                             <tr key={param}>
-                              <td className="font-bold text-slate-700 p-2">{param}</td>
-                              <td className="p-2">
+                              <td className="font-bold text-slate-700 p-2 text-xs md:text-sm">{param}</td>
+                              <td className="p-1 md:p-2">
                                 <input 
-                                  type="text" placeholder="Hasil M1"
-                                  className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 ring-blue-600 outline-none text-center transition-all"
+                                  type="text" placeholder="H1"
+                                  className="w-full p-2 md:p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 ring-blue-600 outline-none text-center transition-all text-xs"
                                   onChange={(e) => handleParamChange(noKelompok, param, 'm1', e.target.value)}
                                 />
                               </td>
-                              <td className="p-2">
+                              <td className="p-1 md:p-2">
                                 <input 
-                                  type="text" placeholder="Hasil M2"
-                                  className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 ring-blue-600 outline-none text-center transition-all"
+                                  type="text" placeholder="H2"
+                                  className="w-full p-2 md:p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 ring-blue-600 outline-none text-center transition-all text-xs"
                                   onChange={(e) => handleParamChange(noKelompok, param, 'm2', e.target.value)}
                                 />
                               </td>
@@ -381,15 +391,15 @@ Secara keseluruhan, pertumbuhan tanaman di rooftop dipengaruhi oleh beberapa fak
                       <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">F. Kesimpulan</label>
                       <textarea 
                         className="p-4 bg-slate-50 border border-slate-100 rounded-2xl h-24 text-xs outline-none focus:ring-2 ring-blue-500"
-                        placeholder="Biarkan kosong untuk menggunakan narasi otomatis dari tabel..."
+                        placeholder="Biarkan kosong untuk menggunakan narasi otomatis..."
                         value={extraInfo[noKelompok]?.kesimpulan || ""}
                         onChange={(e) => handleExtraChange(noKelompok, 'kesimpulan', e.target.value)}
                       />
                       <button 
                         onClick={() => handleExtraChange(noKelompok, 'kesimpulan', generateNarrative(noKelompok))}
-                        className="text-[8px] font-bold text-blue-600 hover:underline text-left"
+                        className="text-[8px] font-bold text-blue-600 hover:underline text-left mt-1"
                       >
-                        ✨ Gunakan Narasi Otomatis Rooftop
+                        ✨ Gunakan Template Kesimpulan
                       </button>
                     </div>
                   </div>
@@ -398,13 +408,13 @@ Secara keseluruhan, pertumbuhan tanaman di rooftop dipengaruhi oleh beberapa fak
                     <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
                       <span className="w-2 h-2 bg-green-600 rounded-full"></span> Dokumentasi Terdeteksi ({kelompokGroups[noKelompok].length} Foto)
                     </h3>
-                    <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
+                    <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-6 px-6 md:mx-0 md:px-0">
                       {kelompokGroups[noKelompok].map((log: any, idx: number) => (
                         <div key={idx} className="flex-shrink-0 relative group flex flex-col items-center">
-                          <img src={log.foto} className="w-28 h-28 object-cover rounded-2xl border-2 border-white shadow-md transition-transform group-hover:scale-105" loading="lazy" />
+                          <img src={log.foto} className="w-24 h-24 md:w-28 md:h-28 object-cover rounded-2xl border-2 border-white shadow-md transition-transform group-hover:scale-105" loading="lazy" />
                           <div className="mt-2 flex flex-col items-center gap-1">
                             <span className="bg-black/50 text-white text-[8px] px-2 py-1 rounded-full backdrop-blur-sm">Day {idx + 1}</span>
-                            <span className="text-[9px] font-bold text-slate-600 max-w-[100px] truncate">Oleh: {log.nama || 'Anonim'}</span>
+                            <span className="text-[9px] font-bold text-slate-600 max-w-[90px] md:max-w-[100px] truncate">Oleh: {log.nama || 'Anonim'}</span>
                           </div>
                         </div>
                       ))}

@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
@@ -10,14 +11,11 @@ export default function RiwayatPage() {
   const router = useRouter();
   const supabase = createClient();
   const [dataRiwayat, setDataRiwayat] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false); // Default false karena tidak narik data di awal
-  
+  const [loading, setLoading] = useState(false); // Diubah ke false agar tidak loading di awal
+
   // LOGIKA BARU: State untuk melacak kelompok mana yang sudah terbuka
   const [unlockedGroups, setUnlockedGroups] = useState<string[]>([]);
   const [passInput, setPassInput] = useState<{ [key: string]: string }>({});
-
-  // --- LOGIKA TAMBAHAN UNTUK OPTIMASI (PAGINATION) ---
-  const [itemRange, setItemRange] = useState(20); 
 
   const getNamaIlmiah = (komoditas: string) => {
     const namaLower = komoditas?.toLowerCase() || "";
@@ -28,32 +26,31 @@ export default function RiwayatPage() {
     return komoditas; 
   };
 
-  // LOGIKA BARU: Fungsi fetch spesifik kelompok (Hanya dipanggil setelah password benar)
+  // LOGIKA BARU: Fungsi fetch spesifik kelompok (Lazy Loading)
   const fetchGroupLogs = async (noKelompok: string) => {
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from('logbook')
         .select('*')
-        .eq('kelompok', parseInt(noKelompok)) // FILTER: Hanya ambil data kelompok ini
-        .order('created_at', { ascending: false });
+        .eq('kelompok', parseInt(noKelompok)) // Hanya ambil data kelompok ini
+        .order('created_at', { ascending: true }); // Urutan tanggal lama ke baru
       
       if (error) throw error;
       
-      // Gabungkan dengan data yang sudah ada di state agar kelompok lain tidak hilang saat di-unlock
+      // Gabungkan data baru dengan data kelompok lain yang sudah terbuka
       setDataRiwayat(prev => {
         const filteredPrev = prev.filter(item => item.kelompok !== parseInt(noKelompok));
         return [...filteredPrev, ...(data || [])];
       });
-
     } catch (error: any) {
-      alert("Gagal sinkronisasi data cloud: " + error.message);
+      alert("Gagal mengambil data kelompok: " + error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Fungsi refresh global tetap dipertahankan namun hanya merefresh kelompok yang sudah terbuka
+  // Fungsi refresh untuk menyegarkan data kelompok yang sudah terbuka saja
   const fetchLogs = async () => {
     if (unlockedGroups.length === 0) return;
     setLoading(true);
@@ -62,7 +59,7 @@ export default function RiwayatPage() {
         .from('logbook')
         .select('*')
         .in('kelompok', unlockedGroups.map(g => parseInt(g)))
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: true }); 
       
       if (error) throw error;
       setDataRiwayat(data || []);
@@ -73,7 +70,12 @@ export default function RiwayatPage() {
     }
   };
 
-  // LOGIKA DISINKRONKAN DENGAN ADMIN: Fungsi Verifikasi Password
+  // Kita tidak menjalankan fetchLogs di useEffect awal karena data masih terkunci
+  useEffect(() => {
+    // Kosongkan atau bisa diisi pengecekan session jika perlu
+  }, []);
+
+  // LOGIKA DISINKRONKAN DENGAN ADMIN: Fungsi Verifikasi Password dari Database
   const handleVerifyPassword = async (noKelompok: string) => {
     try {
       const { data: configData, error } = await supabase
@@ -90,8 +92,9 @@ export default function RiwayatPage() {
       }
 
       if (passInput[noKelompok]?.trim() === configData.password.trim()) {
-        // JIKA BENAR: Tandai unlocked, lalu BARU narik data dari Supabase
+        // 1. Tambahkan ke daftar unlocked
         setUnlockedGroups(prev => [...prev, noKelompok]);
+        // 2. LAZY LOADING: Panggil data hanya untuk kelompok ini
         await fetchGroupLogs(noKelompok);
       } else {
         alert("❌ Password Salah! Hubungi ketua kelompok untuk akses.");
@@ -108,7 +111,8 @@ export default function RiwayatPage() {
         const { error } = await supabase.from('logbook').delete().eq('id', id);
         if (error) throw error;
         alert("✅ Data berhasil dihapus!");
-        fetchGroupLogs(noKelompok); // Refresh data kelompok spesifik ini saja
+        // Refresh data kelompok ini saja setelah hapus
+        fetchGroupLogs(noKelompok);
       } catch (error: any) {
         alert("Gagal menghapus: " + error.message);
       }
@@ -161,7 +165,6 @@ export default function RiwayatPage() {
     doc.save(`Logbook_Kelompok_${noKelompok}.pdf`);
   };
 
-  // Mengelompokkan data berdasarkan nomor kelompok (Hanya untuk data yang sudah ditarik)
   const kelompokGroups = dataRiwayat.reduce((groups: any, item: any) => {
     const group = groups[item.kelompok] || [];
     group.push(item);
@@ -169,7 +172,7 @@ export default function RiwayatPage() {
     return groups;
   }, {});
 
-  // Daftar kelompok 1-20 untuk nampilin placeholder kunci
+  // Daftar kelompok 1-20 untuk menampilkan placeholder kunci
   const daftarKelompok = Array.from({ length: 20 }, (_, i) => (i + 1).toString());
 
   return (
@@ -187,10 +190,10 @@ export default function RiwayatPage() {
           </div>
         </header>
 
-        {loading && dataRiwayat.length === 0 && unlockedGroups.length > 0 ? (
+        {loading && dataRiwayat.length === 0 ? (
           <div className="text-center py-20">
             <div className="animate-spin inline-block w-8 h-8 border-4 border-slate-900 border-t-transparent rounded-full"></div>
-            <p className="mt-4 font-bold text-slate-400 uppercase tracking-widest text-[10px]">Menyinkronkan data kelompok...</p>
+            <p className="mt-4 font-bold text-slate-400 uppercase tracking-widest text-[10px]">Menghubungkan ke Supabase...</p>
           </div>
         ) : (
           daftarKelompok.map((noKelompok) => (
@@ -198,9 +201,9 @@ export default function RiwayatPage() {
               <div className="mb-6 flex justify-between items-end">
                 <div>
                   <h2 className="text-xl font-black text-blue-600 uppercase tracking-tight">Kelompok {noKelompok}</h2>
-                  {unlockedGroups.includes(noKelompok) && kelompokGroups[noKelompok] && (
+                  {unlockedGroups.includes(noKelompok) && kelompokGroups[noKelompok]?.[0] && (
                     <p className="text-sm text-slate-500 italic font-medium">
-                        Komoditas: {getNamaIlmiah(kelompokGroups[noKelompok][0]?.komoditas)}
+                      Komoditas: {getNamaIlmiah(kelompokGroups[noKelompok][0].komoditas)}
                     </p>
                   )}
                 </div>
@@ -226,13 +229,11 @@ export default function RiwayatPage() {
                         type="password" 
                         placeholder="Password..."
                         className="flex-1 p-2 border border-slate-300 rounded-lg text-xs focus:ring-2 ring-blue-500 outline-none"
-                        value={passInput[noKelompok] || ""}
                         onChange={(e) => setPassInput({...passInput, [noKelompok]: e.target.value})}
                         onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword(noKelompok)}
                       />
                       <button 
                         onClick={() => handleVerifyPassword(noKelompok)}
-                        disabled={loading}
                         className="bg-slate-900 text-white px-4 py-2 rounded-lg text-[10px] font-bold hover:bg-blue-600 transition-colors"
                       >
                         {loading ? "..." : "BUKA"}
@@ -241,9 +242,9 @@ export default function RiwayatPage() {
                   </div>
                 </div>
               ) : !kelompokGroups[noKelompok] || kelompokGroups[noKelompok].length === 0 ? (
-                 <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-8 text-center">
-                    <p className="text-xs text-slate-400 italic">Kelompok ini belum memiliki data logbook.</p>
-                 </div>
+                <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-8 text-center">
+                   <p className="text-xs text-slate-400 italic">Kelompok ini belum memiliki data logbook.</p>
+                </div>
               ) : (
                 <div className="overflow-x-auto rounded-xl border border-black shadow-sm">
                   <table className="w-full border-collapse text-xs">
@@ -270,9 +271,9 @@ export default function RiwayatPage() {
                             {row.foto ? (
                               <img 
                                 src={row.foto} 
-                                loading="lazy"
                                 className="w-24 h-16 object-cover rounded-md mx-auto shadow-sm" 
                                 alt="Bukti" 
+                                loading="lazy"
                                 onError={(e) => {
                                   (e.target as HTMLImageElement).src = "https://via.placeholder.com/150?text=Format+Error";
                                 }}
