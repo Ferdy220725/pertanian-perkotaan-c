@@ -39,7 +39,7 @@ const DAFTAR_MAHASISWA = [
   { npm: "25025010124", nama: "CITRA PUTRI RAHMADANY" },
   { npm: "25025010125", nama: "ARJUNA WIRA KUSUMA" },
   { npm: "25025010126", nama: "NADIA FEBRISCA RACHMA" },
-  { npm: "25025010127", nama: "KHANZA AFIFAH AMALINA" },
+  { npm: "25025010127", className: "KHANZA AFIFAH AMALINA" },
   { npm: "25025010128", nama: "FARINA PUTRI AURELIA" },
   { npm: "25025010129", nama: "M. FAREL AL FAHREZI" },
   { npm: "25025010130", nama: "LILIS DWI NURFADILAH" },
@@ -101,9 +101,27 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
     });
   };
 
+  // LOGIKA PENAMBAHAN VALIDASI FOTO (MAKS 2MB & JPG)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // 1. Validasi Tipe File (Harus JPG/JPEG)
+      const allowedTypes = ['image/jpeg', 'image/jpg'];
+      if (!allowedTypes.includes(file.type)) {
+        alert("❌ Error: Format file harus JPG atau JPEG!");
+        e.target.value = ""; // Reset input file
+        return;
+      }
+
+      // 2. Validasi Ukuran File (Maksimal 2 MB = 2 * 1024 * 1024 bytes)
+      const maxSize = 2 * 1024 * 1024;
+      if (file.size > maxSize) {
+        alert("❌ Error: Ukuran foto terlalu besar! Maksimal adalah 2 MB.");
+        e.target.value = ""; // Reset input file
+        return;
+      }
+
+      // Jika lolos validasi, baca file
       const reader = new FileReader();
       reader.onloadend = () => {
         setFormData({ ...formData, foto: reader.result as string });
@@ -164,7 +182,6 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
               ))}
             </select>
 
-            {/* LOGIKA BARU: Tampilan Tag Nama yang terpilih */}
             <div className="flex flex-wrap gap-2 mt-3 px-2">
               {selectedObservers.map((o) => (
                 <div key={o.npm} className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-[10px] font-black flex items-center gap-2 border border-blue-100">
@@ -175,7 +192,6 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
             </div>
           </div>
 
-          {/* NPM Terisi Otomatis (Preview String) */}
           <div>
             <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">NPM Pengamat</label>
             <input 
@@ -225,11 +241,12 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
           </div>
 
           <div className="relative group">
-            <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" id="upload-foto" />
+            {/* Menambahkan accept=".jpg,.jpeg" untuk filter awal di browser */}
+            <input type="file" accept=".jpg,.jpeg" onChange={handleFileChange} className="hidden" id="upload-foto" />
             <label htmlFor="upload-foto" className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-200 rounded-3xl cursor-pointer group-hover:border-blue-600 transition-all">
               <span className="text-2xl mb-2">{formData.foto ? "✅" : "📸"}</span>
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-blue-600 text-center">
-                {formData.foto ? "Foto Berhasil Dipilih" : "Upload Dokumentasi"}
+                {formData.foto ? "Foto Berhasil Dipilih" : "Upload Dokumentasi (Maks 2MB, JPG)"}
               </span>
             </label>
           </div>
