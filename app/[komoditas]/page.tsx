@@ -6,7 +6,7 @@ import { createClient } from '@/utils/supabase/client';
 // DAFTAR MAHASISWA AGROTEK C TERBARU
 const DAFTAR_MAHASISWA = [
   { npm: "25025010093", nama: "SITI NUR FADILAH" },
-  { npm: "25025010094", nama: "AGNIA LAQUINTA A-Abin" },
+  { npm: "25025010094", nama: "AGNIA LAQUINTA Al-Abin" },
   { npm: "25025010095", nama: "AFIA DWI AGUSTIN" },
   { npm: "25025010096", nama: "APRILITA MASYFATAH" },
   { npm: "25025010097", nama: "SYAKILA BALQIS AL-FANEZA" },
@@ -23,7 +23,6 @@ const DAFTAR_MAHASISWA = [
   { npm: "25025010108", nama: "EKA RISZIANA AGUSTIN" },
   { npm: "25025010109", nama: "KHULLATUL BARIROH" },
   { npm: "25025010110", nama: "AGATHA ZULEYKA RAMDAN" },
-  { npm: "25025010110", nama: "ANDINI SALWA INGGRAINI" },
   { npm: "25025010111", nama: "FAQIHATUN NISA'" },
   { npm: "25025010112", nama: "SALSABILLA OCTAVIA RAMADHANI" },
   { npm: "25025010113", nama: "KEYSHA AULIA AZZAHRA" },
@@ -31,6 +30,7 @@ const DAFTAR_MAHASISWA = [
   { npm: "25025010115", nama: "USWATUN KHASANAH" },
   { npm: "25025010116", nama: "DHARMA AJI WISNU Utama" },
   { npm: "25025010117", nama: "KEIKY RESVANTI RAMADHANTI" },
+  { npm: "25025010118", nama: "ANDINI SALWA INGGRAINI" },
   { npm: "25025010119", nama: "TALITHA LISTYA SALSABILA" },
   { npm: "25025010120", nama: "ANDREA BENAYA PAGONGGANG" },
   { npm: "25025010121", nama: "AQDRIA YASHIRLY AMIRLLA" },
@@ -39,7 +39,7 @@ const DAFTAR_MAHASISWA = [
   { npm: "25025010124", nama: "CITRA PUTRI RAHMADANY" },
   { npm: "25025010125", nama: "ARJUNA WIRA KUSUMA" },
   { npm: "25025010126", nama: "NADIA FEBRISCA RACHMA" },
-  { npm: "25025010127", className: "KHANZA AFIFAH AMALINA" },
+  { npm: "25025010127", nama: "KHANZA AFIFAH AMALINA" },
   { npm: "25025010128", nama: "FARINA PUTRI AURELIA" },
   { npm: "25025010129", nama: "M. FAREL AL FAHREZI" },
   { npm: "25025010130", nama: "LILIS DWI NURFADILAH" },

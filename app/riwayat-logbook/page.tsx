@@ -10,11 +10,14 @@ export default function RiwayatPage() {
   const router = useRouter();
   const supabase = createClient();
   const [dataRiwayat, setDataRiwayat] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Default false karena tidak narik data di awal
   
   // LOGIKA BARU: State untuk melacak kelompok mana yang sudah terbuka
   const [unlockedGroups, setUnlockedGroups] = useState<string[]>([]);
   const [passInput, setPassInput] = useState<{ [key: string]: string }>({});
+
+  // --- LOGIKA TAMBAHAN UNTUK OPTIMASI (PAGINATION) ---
+  const [itemRange, setItemRange] = useState(20); 
 
   const getNamaIlmiah = (komoditas: string) => {
     const namaLower = komoditas?.toLowerCase() || "";
@@ -25,31 +28,54 @@ export default function RiwayatPage() {
     return komoditas; 
   };
 
-  const fetchLogs = async () => {
+  // LOGIKA BARU: Fungsi fetch spesifik kelompok (Hanya dipanggil setelah password benar)
+  const fetchGroupLogs = async (noKelompok: string) => {
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from('logbook')
         .select('*')
-        .order('created_at', { ascending: true }); 
+        .eq('kelompok', parseInt(noKelompok)) // FILTER: Hanya ambil data kelompok ini
+        .order('created_at', { ascending: false });
       
       if (error) throw error;
-      setDataRiwayat(data || []);
+      
+      // Gabungkan dengan data yang sudah ada di state agar kelompok lain tidak hilang saat di-unlock
+      setDataRiwayat(prev => {
+        const filteredPrev = prev.filter(item => item.kelompok !== parseInt(noKelompok));
+        return [...filteredPrev, ...(data || [])];
+      });
+
     } catch (error: any) {
-      alert("Gagal mengambil data: " + error.message);
+      alert("Gagal sinkronisasi data cloud: " + error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchLogs();
-  }, []);
+  // Fungsi refresh global tetap dipertahankan namun hanya merefresh kelompok yang sudah terbuka
+  const fetchLogs = async () => {
+    if (unlockedGroups.length === 0) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('logbook')
+        .select('*')
+        .in('kelompok', unlockedGroups.map(g => parseInt(g)))
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setDataRiwayat(data || []);
+    } catch (error: any) {
+      alert("Gagal menyegarkan data: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // LOGIKA DISINKRONKAN DENGAN ADMIN: Fungsi Verifikasi Password dari Database
+  // LOGIKA DISINKRONKAN DENGAN ADMIN: Fungsi Verifikasi Password
   const handleVerifyPassword = async (noKelompok: string) => {
     try {
-      // 1. Ambil password terbaru dari tabel config_password berdasarkan nomor kelompok
       const { data: configData, error } = await supabase
         .from('config_password')
         .select('password')
@@ -63,9 +89,10 @@ export default function RiwayatPage() {
         return;
       }
 
-      // 2. Bandingkan input user dengan password dari database (Admin)
       if (passInput[noKelompok]?.trim() === configData.password.trim()) {
-        setUnlockedGroups([...unlockedGroups, noKelompok]);
+        // JIKA BENAR: Tandai unlocked, lalu BARU narik data dari Supabase
+        setUnlockedGroups(prev => [...prev, noKelompok]);
+        await fetchGroupLogs(noKelompok);
       } else {
         alert("❌ Password Salah! Hubungi ketua kelompok untuk akses.");
       }
@@ -74,14 +101,14 @@ export default function RiwayatPage() {
     }
   };
 
-  const handleHapusData = async (id: string) => {
+  const handleHapusData = async (id: string, noKelompok: string) => {
     const confirmHapus = confirm("Apakah Anda yakin ingin menghapus data ini secara permanen dari database cloud?");
     if (confirmHapus) {
       try {
         const { error } = await supabase.from('logbook').delete().eq('id', id);
         if (error) throw error;
         alert("✅ Data berhasil dihapus!");
-        fetchLogs();
+        fetchGroupLogs(noKelompok); // Refresh data kelompok spesifik ini saja
       } catch (error: any) {
         alert("Gagal menghapus: " + error.message);
       }
@@ -91,6 +118,8 @@ export default function RiwayatPage() {
   const downloadPDFPerKelompok = async (noKelompok: string) => {
     const doc = new jsPDF('l', 'mm', 'a4');
     const dataSpesifik = kelompokGroups[noKelompok];
+    if (!dataSpesifik) return;
+
     doc.setFontSize(16);
     doc.text(`RIWAYAT LOGBOOK - KELOMPOK ${noKelompok}`, 14, 15);
     doc.setFontSize(10);
@@ -132,12 +161,16 @@ export default function RiwayatPage() {
     doc.save(`Logbook_Kelompok_${noKelompok}.pdf`);
   };
 
+  // Mengelompokkan data berdasarkan nomor kelompok (Hanya untuk data yang sudah ditarik)
   const kelompokGroups = dataRiwayat.reduce((groups: any, item: any) => {
     const group = groups[item.kelompok] || [];
     group.push(item);
     groups[item.kelompok] = group;
     return groups;
   }, {});
+
+  // Daftar kelompok 1-20 untuk nampilin placeholder kunci
+  const daftarKelompok = Array.from({ length: 20 }, (_, i) => (i + 1).toString());
 
   return (
     <main className="min-h-screen bg-white p-6 md:p-12 text-slate-900 font-serif">
@@ -149,31 +182,30 @@ export default function RiwayatPage() {
           </div>
           <div className="flex gap-3">
             <button onClick={fetchLogs} className="bg-slate-100 hover:bg-slate-200 px-6 py-2 rounded-full font-bold text-xs transition-all shadow-sm">
-              {loading ? "Memuat..." : "🔄 Refresh Data"}
+              {loading ? "Memuat..." : "🔄 Refresh Data Terbuka"}
             </button>
           </div>
         </header>
 
-        {loading ? (
+        {loading && dataRiwayat.length === 0 && unlockedGroups.length > 0 ? (
           <div className="text-center py-20">
             <div className="animate-spin inline-block w-8 h-8 border-4 border-slate-900 border-t-transparent rounded-full"></div>
-            <p className="mt-4 font-bold text-slate-400 uppercase tracking-widest text-[10px]">Menghubungkan ke Supabase...</p>
-          </div>
-        ) : Object.keys(kelompokGroups).length === 0 ? (
-          <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[3rem] p-20 text-center">
-            <p className="text-slate-400 italic font-medium">Belum ada laporan yang masuk ke database.</p>
+            <p className="mt-4 font-bold text-slate-400 uppercase tracking-widest text-[10px]">Menyinkronkan data kelompok...</p>
           </div>
         ) : (
-          Object.keys(kelompokGroups).sort().map((noKelompok) => (
+          daftarKelompok.map((noKelompok) => (
             <div key={noKelompok} className="mb-16 border-b border-slate-100 pb-10">
               <div className="mb-6 flex justify-between items-end">
                 <div>
                   <h2 className="text-xl font-black text-blue-600 uppercase tracking-tight">Kelompok {noKelompok}</h2>
-                  <p className="text-sm text-slate-500 italic font-medium">Komoditas: {getNamaIlmiah(kelompokGroups[noKelompok][0].komoditas)}</p>
+                  {unlockedGroups.includes(noKelompok) && kelompokGroups[noKelompok] && (
+                    <p className="text-sm text-slate-500 italic font-medium">
+                        Komoditas: {getNamaIlmiah(kelompokGroups[noKelompok][0]?.komoditas)}
+                    </p>
+                  )}
                 </div>
                 
-                {/* Tombol download hanya muncul jika sudah login/unlocked */}
-                {unlockedGroups.includes(noKelompok) && (
+                {unlockedGroups.includes(noKelompok) && kelompokGroups[noKelompok] && (
                   <button 
                     onClick={() => downloadPDFPerKelompok(noKelompok)}
                     className="bg-white hover:bg-slate-50 text-black border border-slate-200 px-4 py-2 rounded-lg font-bold text-[10px] transition-all shadow-sm flex items-center gap-2 no-print"
@@ -183,7 +215,6 @@ export default function RiwayatPage() {
                 )}
               </div>
 
-              {/* LOGIKA BARU: Kondisi apakah data ditampilkan atau dikunci */}
               {!unlockedGroups.includes(noKelompok) ? (
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-8 text-center shadow-inner">
                   <div className="max-w-xs mx-auto">
@@ -195,18 +226,24 @@ export default function RiwayatPage() {
                         type="password" 
                         placeholder="Password..."
                         className="flex-1 p-2 border border-slate-300 rounded-lg text-xs focus:ring-2 ring-blue-500 outline-none"
+                        value={passInput[noKelompok] || ""}
                         onChange={(e) => setPassInput({...passInput, [noKelompok]: e.target.value})}
                         onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword(noKelompok)}
                       />
                       <button 
                         onClick={() => handleVerifyPassword(noKelompok)}
+                        disabled={loading}
                         className="bg-slate-900 text-white px-4 py-2 rounded-lg text-[10px] font-bold hover:bg-blue-600 transition-colors"
                       >
-                        BUKA
+                        {loading ? "..." : "BUKA"}
                       </button>
                     </div>
                   </div>
                 </div>
+              ) : !kelompokGroups[noKelompok] || kelompokGroups[noKelompok].length === 0 ? (
+                 <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-8 text-center">
+                    <p className="text-xs text-slate-400 italic">Kelompok ini belum memiliki data logbook.</p>
+                 </div>
               ) : (
                 <div className="overflow-x-auto rounded-xl border border-black shadow-sm">
                   <table className="w-full border-collapse text-xs">
@@ -233,6 +270,7 @@ export default function RiwayatPage() {
                             {row.foto ? (
                               <img 
                                 src={row.foto} 
+                                loading="lazy"
                                 className="w-24 h-16 object-cover rounded-md mx-auto shadow-sm" 
                                 alt="Bukti" 
                                 onError={(e) => {
@@ -246,7 +284,7 @@ export default function RiwayatPage() {
                           <td className="border border-black p-3 text-center no-print">
                             <div className="flex flex-col gap-2">
                                <button 
-                                onClick={() => handleHapusData(row.id)}
+                                onClick={() => handleHapusData(row.id, noKelompok)}
                                 className="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white px-3 py-1 rounded-lg font-bold transition-all border border-red-100"
                               >
                                 Hapus

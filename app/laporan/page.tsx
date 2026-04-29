@@ -12,9 +12,16 @@ export default function LaporanPage() {
   const router = useRouter();
   const supabase = createClient();
   const [dataRiwayat, setDataRiwayat] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Default false karena tidak narik data massal di awal
   const [parameters, setParameters] = useState<any>({});
   const [extraInfo, setExtraInfo] = useState<any>({});
+
+  // --- LOGIKA BARU: KEAMANAN & OPTIMASI ---
+  const [unlockedGroups, setUnlockedGroups] = useState<string[]>([]);
+  const [passInput, setPassInput] = useState<{ [key: string]: string }>({});
+  
+  // Daftar kelompok 1-20 untuk merender UI placeholder
+  const daftarKelompok = Array.from({ length: 20 }, (_, i) => (i + 1).toString());
 
   const getNamaIlmiah = (komoditas: string) => {
     const namaLower = komoditas?.toLowerCase() || "";
@@ -25,26 +32,77 @@ export default function LaporanPage() {
     return komoditas;
   };
 
-  const fetchLogs = async () => {
+  // LOGIKA BARU: Fungsi ambil data per kelompok (dipanggil hanya setelah password benar)
+  const fetchGroupLogs = async (noKelompok: string) => {
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from('logbook')
         .select('*')
-        .order('created_at', { ascending: true }); 
+        .eq('kelompok', parseInt(noKelompok)) // FILTER: Hanya ambil data kelompok ini
+        .order('created_at', { ascending: true });
       
       if (error) throw error;
-      setDataRiwayat(data || []);
+      
+      // Gabungkan data baru ke state tanpa menghapus data kelompok lain yang sudah terbuka
+      setDataRiwayat(prev => {
+        const filteredPrev = prev.filter(item => item.kelompok !== parseInt(noKelompok));
+        return [...filteredPrev, ...(data || [])];
+      });
     } catch (error: any) {
-      alert("Gagal mengambil data dari cloud: " + error.message);
+      alert("Gagal sinkronisasi data cloud: " + error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchLogs();
-  }, []);
+  // LOGIKA BARU: Verifikasi Password Kelompok dari tabel 'config_password'
+  const handleVerifyPassword = async (noKelompok: string) => {
+    try {
+      const { data: config, error } = await supabase
+        .from('config_password')
+        .select('password')
+        .eq('kelompok', parseInt(noKelompok))
+        .maybeSingle();
+
+      if (error) throw error;
+      
+      if (!config) {
+        alert(`Admin belum mengatur password untuk Kelompok ${noKelompok}`);
+        return;
+      }
+
+      if (passInput[noKelompok]?.trim() === config.password.trim()) {
+        // JIKA BENAR: Tandai terbuka, lalu BARU narik data spesifik kelompok tersebut
+        setUnlockedGroups([...unlockedGroups, noKelompok]);
+        await fetchGroupLogs(noKelompok);
+      } else {
+        alert("❌ Password Salah!");
+      }
+    } catch (err: any) {
+      alert("Gagal verifikasi: " + err.message);
+    }
+  };
+
+  // Fungsi fetchLogs global diubah fungsinya untuk me-refresh data yang SUDAH terbuka saja
+  const fetchLogs = async () => {
+    if (unlockedGroups.length === 0) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('logbook')
+        .select('*')
+        .in('kelompok', unlockedGroups.map(g => parseInt(g)))
+        .order('created_at', { ascending: true });
+      
+      if (error) throw error;
+      setDataRiwayat(data || []);
+    } catch (error: any) {
+      alert("Gagal menyegarkan data: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const kelompokGroups = dataRiwayat.reduce((groups: any, item: any) => {
     const group = groups[item.kelompok] || [];
@@ -76,19 +134,14 @@ export default function LaporanPage() {
     }));
   };
 
-  // LOGIKA GENERATOR NARASI SESUAI DRAFT ROOFTOP
   const generateNarrative = (noKelompok: string) => {
     const p = parameters[noKelompok] || {};
-    
-    // Ambil nilai atau default 0
     const t1 = parseFloat(p["Tinggi Tanaman"]?.m1) || 0;
     const t2 = parseFloat(p["Tinggi Tanaman"]?.m2) || 0;
     const selisihTinggi = (t2 - t1).toFixed(1);
-
     const d1 = parseFloat(p["Jumlah Daun"]?.m1) || 0;
     const d2 = parseFloat(p["Jumlah Daun"]?.m2) || 0;
     const selisihDaun = (d2 - d1).toFixed(1);
-
     const bunga2 = p["Jumlah Bunga"]?.m2 || "0";
     const buah2 = p["Jumlah Buah"]?.m2 || "0";
 
@@ -210,128 +263,157 @@ Secara keseluruhan, pertumbuhan tanaman di rooftop dipengaruhi oleh beberapa fak
   return (
     <main className="min-h-screen bg-[#f8fafc] p-6 md:p-12 font-sans text-slate-900">
       <div className="max-w-5xl mx-auto">
-        <header className="mb-10">
-          <button onClick={() => router.push('/')} className="text-sm font-bold text-slate-400 hover:text-black transition-colors">← Kembali ke Dashboard</button>
-          <h1 className="text-4xl font-black mt-2 tracking-tighter uppercase">Penyusunan Laporan</h1>
-          <p className="text-slate-500 italic">Data disinkronkan dari cloud. Lengkapi parameter sebelum download.</p>
+        <header className="mb-10 flex justify-between items-end">
+          <div>
+            <button onClick={() => router.push('/')} className="text-sm font-bold text-slate-400 hover:text-black transition-colors">← Kembali ke Dashboard</button>
+            <h1 className="text-4xl font-black mt-2 tracking-tighter uppercase">Penyusunan Laporan</h1>
+            <p className="text-slate-500 italic">Data disinkronkan dari cloud. Masukkan password kelompok untuk mengunduh laporan.</p>
+          </div>
+          <button 
+            onClick={fetchLogs}
+            className="text-[10px] font-bold bg-slate-200 px-4 py-2 rounded-full hover:bg-slate-300 transition-all"
+          >
+            {loading ? "Sinkronisasi..." : "🔄 Refresh Data Terbuka"}
+          </button>
         </header>
 
-        {loading ? (
-          <div className="text-center py-20 bg-white rounded-[3rem] shadow-sm">
-            <div className="animate-spin inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
-            <p className="mt-4 font-bold text-slate-400 uppercase text-[10px] tracking-widest">Sinkronisasi Data...</p>
-          </div>
-        ) : Object.keys(kelompokGroups).length === 0 ? (
-          <div className="bg-white p-20 text-center rounded-[3rem] border-2 border-dashed border-slate-200">
-            <p className="text-slate-400 font-medium italic">Belum ada data logbook di database cloud.</p>
-          </div>
-        ) : (
-          Object.keys(kelompokGroups).sort().map((noKelompok) => (
+        {daftarKelompok.map((noKelompok) => (
             <div key={noKelompok} className="bg-white p-8 rounded-[3rem] shadow-xl mb-12 border border-slate-100 overflow-hidden">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 border-b border-slate-50 pb-6">
                 <div>
                   <span className="text-[10px] font-black bg-blue-600 text-white px-4 py-1 rounded-full uppercase tracking-widest">Kelompok {noKelompok}</span>
-                  <h2 className="text-2xl font-bold mt-2 text-slate-800">{getNamaIlmiah(kelompokGroups[noKelompok][0].komoditas)}</h2>
+                  {unlockedGroups.includes(noKelompok) && kelompokGroups[noKelompok] && (
+                    <h2 className="text-2xl font-bold mt-2 text-slate-800">{getNamaIlmiah(kelompokGroups[noKelompok][0]?.komoditas)}</h2>
+                  )}
                 </div>
-                <button 
-                  onClick={() => downloadWord(noKelompok, kelompokGroups[noKelompok])} 
-                  className="mt-4 md:mt-0 bg-slate-950 text-white px-8 py-4 rounded-2xl font-black text-xs hover:bg-blue-600 transition-all shadow-lg active:scale-95"
-                >
-                  📥 DOWNLOAD .DOCX
-                </button>
-              </div>
-
-              <div className="mb-10">
-                <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2">
-                  <span className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></span> Data Pertumbuhan Mingguan
-                </h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm border-separate border-spacing-2">
-                    <thead>
-                      <tr>
-                        <th className="text-left p-2 text-slate-400 uppercase text-[10px] tracking-wider">Parameter</th>
-                        <th className="p-2 text-slate-400 uppercase text-[10px] tracking-wider">Minggu 1</th>
-                        <th className="p-2 text-slate-400 uppercase text-[10px] tracking-wider">Minggu 2</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {["Tinggi Tanaman", "Jumlah Daun", "Jumlah Bunga", "Jumlah Buah"].map((param) => (
-                        <tr key={param}>
-                          <td className="font-bold text-slate-700 p-2">{param}</td>
-                          <td className="p-2">
-                            <input 
-                              type="text" placeholder="Hasil M1"
-                              className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 ring-blue-600 outline-none text-center transition-all"
-                              onChange={(e) => handleParamChange(noKelompok, param, 'm1', e.target.value)}
-                            />
-                          </td>
-                          <td className="p-2">
-                            <input 
-                              type="text" placeholder="Hasil M2"
-                              className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 ring-blue-600 outline-none text-center transition-all"
-                              onChange={(e) => handleParamChange(noKelompok, param, 'm2', e.target.value)}
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">D. Kendala</label>
-                  <textarea 
-                    className="p-4 bg-slate-50 border border-slate-100 rounded-2xl h-24 text-xs outline-none focus:ring-2 ring-red-500"
-                    placeholder="Contoh: Serangan hama kutu daun..."
-                    onChange={(e) => handleExtraChange(noKelompok, 'kendala', e.target.value)}
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">E. Solusi</label>
-                  <textarea 
-                    className="p-4 bg-slate-50 border border-slate-100 rounded-2xl h-24 text-xs outline-none focus:ring-2 ring-green-500"
-                    placeholder="Contoh: Pemberian pestisida nabati..."
-                    onChange={(e) => handleExtraChange(noKelompok, 'solusi', e.target.value)}
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">F. Kesimpulan</label>
-                  <textarea 
-                    className="p-4 bg-slate-50 border border-slate-100 rounded-2xl h-24 text-xs outline-none focus:ring-2 ring-blue-500"
-                    placeholder="Biarkan kosong untuk menggunakan narasi otomatis dari tabel..."
-                    value={extraInfo[noKelompok]?.kesimpulan || ""}
-                    onChange={(e) => handleExtraChange(noKelompok, 'kesimpulan', e.target.value)}
-                  />
+                
+                {unlockedGroups.includes(noKelompok) && kelompokGroups[noKelompok] && (
                   <button 
-                    onClick={() => handleExtraChange(noKelompok, 'kesimpulan', generateNarrative(noKelompok))}
-                    className="text-[8px] font-bold text-blue-600 hover:underline text-left"
+                    onClick={() => downloadWord(noKelompok, kelompokGroups[noKelompok])} 
+                    className="mt-4 md:mt-0 bg-slate-950 text-white px-8 py-4 rounded-2xl font-black text-xs hover:bg-blue-600 transition-all shadow-lg active:scale-95"
                   >
-                    ✨ Gunakan Narasi Otomatis Rooftop
+                    📥 DOWNLOAD .DOCX
                   </button>
-                </div>
+                )}
               </div>
 
-              <div>
-                <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
-                  <span className="w-2 h-2 bg-green-600 rounded-full"></span> Dokumentasi Terdeteksi ({kelompokGroups[noKelompok].length} Foto)
-                </h3>
-                <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
-                  {kelompokGroups[noKelompok].map((log: any, idx: number) => (
-                    <div key={idx} className="flex-shrink-0 relative group flex flex-col items-center">
-                      <img src={log.foto} className="w-28 h-28 object-cover rounded-2xl border-2 border-white shadow-md transition-transform group-hover:scale-105" />
-                      <div className="mt-2 flex flex-col items-center gap-1">
-                        <span className="bg-black/50 text-white text-[8px] px-2 py-1 rounded-full backdrop-blur-sm">Day {idx + 1}</span>
-                        <span className="text-[9px] font-bold text-slate-600 max-w-[100px] truncate">Oleh: {log.nama || 'Anonim'}</span>
-                      </div>
-                    </div>
-                  ))}
+              {!unlockedGroups.includes(noKelompok) ? (
+                <div className="py-10 text-center bg-slate-50 rounded-3xl border border-slate-200">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Input Password Kelompok untuk Mengisi & Unduh</p>
+                  <div className="flex justify-center gap-2 max-w-xs mx-auto">
+                    <input 
+                      type="password" 
+                      placeholder="Password..."
+                      className="flex-1 p-3 bg-white border border-slate-300 rounded-xl text-sm outline-none focus:ring-2 ring-blue-600"
+                      onChange={(e) => setPassInput({...passInput, [noKelompok]: e.target.value})}
+                      onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword(noKelompok)}
+                    />
+                    <button 
+                      onClick={() => handleVerifyPassword(noKelompok)}
+                      className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-xs hover:bg-slate-900 transition-all"
+                    >
+                      BUKA
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : !kelompokGroups[noKelompok] || kelompokGroups[noKelompok].length === 0 ? (
+                <div className="bg-slate-50 p-10 text-center rounded-3xl border border-dashed border-slate-200">
+                   <p className="text-slate-400 font-medium italic">Kelompok ini belum memiliki data logbook.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="mb-10">
+                    <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></span> Data Pertumbuhan Mingguan
+                    </h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm border-separate border-spacing-2">
+                        <thead>
+                          <tr>
+                            <th className="text-left p-2 text-slate-400 uppercase text-[10px] tracking-wider">Parameter</th>
+                            <th className="p-2 text-slate-400 uppercase text-[10px] tracking-wider">Minggu 1</th>
+                            <th className="p-2 text-slate-400 uppercase text-[10px] tracking-wider">Minggu 2</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {["Tinggi Tanaman", "Jumlah Daun", "Jumlah Bunga", "Jumlah Buah"].map((param) => (
+                            <tr key={param}>
+                              <td className="font-bold text-slate-700 p-2">{param}</td>
+                              <td className="p-2">
+                                <input 
+                                  type="text" placeholder="Hasil M1"
+                                  className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 ring-blue-600 outline-none text-center transition-all"
+                                  onChange={(e) => handleParamChange(noKelompok, param, 'm1', e.target.value)}
+                                />
+                              </td>
+                              <td className="p-2">
+                                <input 
+                                  type="text" placeholder="Hasil M2"
+                                  className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 ring-blue-600 outline-none text-center transition-all"
+                                  onChange={(e) => handleParamChange(noKelompok, param, 'm2', e.target.value)}
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">D. Kendala</label>
+                      <textarea 
+                        className="p-4 bg-slate-50 border border-slate-100 rounded-2xl h-24 text-xs outline-none focus:ring-2 ring-red-500"
+                        placeholder="Contoh: Serangan hama kutu daun..."
+                        onChange={(e) => handleExtraChange(noKelompok, 'kendala', e.target.value)}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">E. Solusi</label>
+                      <textarea 
+                        className="p-4 bg-slate-50 border border-slate-100 rounded-2xl h-24 text-xs outline-none focus:ring-2 ring-green-500"
+                        placeholder="Contoh: Pemberian pestisida nabati..."
+                        onChange={(e) => handleExtraChange(noKelompok, 'solusi', e.target.value)}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">F. Kesimpulan</label>
+                      <textarea 
+                        className="p-4 bg-slate-50 border border-slate-100 rounded-2xl h-24 text-xs outline-none focus:ring-2 ring-blue-500"
+                        placeholder="Biarkan kosong untuk menggunakan narasi otomatis dari tabel..."
+                        value={extraInfo[noKelompok]?.kesimpulan || ""}
+                        onChange={(e) => handleExtraChange(noKelompok, 'kesimpulan', e.target.value)}
+                      />
+                      <button 
+                        onClick={() => handleExtraChange(noKelompok, 'kesimpulan', generateNarrative(noKelompok))}
+                        className="text-[8px] font-bold text-blue-600 hover:underline text-left"
+                      >
+                        ✨ Gunakan Narasi Otomatis Rooftop
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-green-600 rounded-full"></span> Dokumentasi Terdeteksi ({kelompokGroups[noKelompok].length} Foto)
+                    </h3>
+                    <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
+                      {kelompokGroups[noKelompok].map((log: any, idx: number) => (
+                        <div key={idx} className="flex-shrink-0 relative group flex flex-col items-center">
+                          <img src={log.foto} className="w-28 h-28 object-cover rounded-2xl border-2 border-white shadow-md transition-transform group-hover:scale-105" loading="lazy" />
+                          <div className="mt-2 flex flex-col items-center gap-1">
+                            <span className="bg-black/50 text-white text-[8px] px-2 py-1 rounded-full backdrop-blur-sm">Day {idx + 1}</span>
+                            <span className="text-[9px] font-bold text-slate-600 max-w-[100px] truncate">Oleh: {log.nama || 'Anonim'}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
-          ))
-        )}
+          ))}
       </div>
     </main>
   );
