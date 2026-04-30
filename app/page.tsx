@@ -349,14 +349,14 @@ export default function Home() {
                         🏆
                       </div>
                       <div className="absolute -bottom-2 -right-2 bg-white text-black text-[10px] font-black px-3 py-1 rounded-full shadow-sm border border-yellow-500">
-                        HERO
+                        EXCELLENT
                       </div>
                    </div>
                    
                    <div className="text-center md:text-left space-y-3">
                       <h3 className="text-[10px] font-black uppercase tracking-[.4em] text-yellow-500/80">Mahasiswa Ter-Rajin Minggu Ini</h3>
                       <p className="text-white text-sm md:text-base font-medium leading-relaxed italic">
-                        "SELAMAT, <span className="text-yellow-400 font-black not-italic underline decoration-yellow-500/50 underline-offset-4">{weeklyHero.nama}</span>! Kamu mahasiswa ter rajin minggu ini. Effortmu secerah sinar matahari pagi. Pertahankan ritme kerjamu!"
+                        "SELAMAT, <span className="text-yellow-400 font-black not-italic underline decoration-yellow-500/50 underline-offset-4">{weeklyHero.nama}</span>"
                       </p>
                       <div className="flex flex-wrap justify-center md:justify-start gap-4 mt-4">
                          <div className="bg-white/5 backdrop-blur-md border border-white/10 px-4 py-2 rounded-xl">
