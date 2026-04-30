@@ -19,7 +19,7 @@ export default function AdminControl() {
   // 1. Verifikasi Admin (Gunakan password rahasia untuk masuk ke panel ini)
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (masterPass === "AgrotekAdmin2025") { // Ganti dengan password admin yang kamu mau
+    if (masterPass === "ferdy22") { 
       setIsAdmin(true);
       fetchPasswords();
     } else {

@@ -20,7 +20,8 @@ export default function Home() {
     nama: string,
     npm: string,
     kelompok: string,
-    count: number
+    count: number,
+    score?: number
   } | null>(null);
 
   // Data Jadwal Universal
@@ -48,76 +49,90 @@ export default function Home() {
     fetchWeeklyHero();
   }, []);
 
-  // --- LOGIKA BARU: FUNGSI AMBIL PEMENANG MINGGUAN (DENGAN FALLBACK MINGGU LALU) ---
+  // --- LOGIKA BARU: PENGHITUNGAN ADIL (AKUMULASI 7 HARI PENUH) ---
   const fetchWeeklyHero = async () => {
     try {
       const now = new Date();
+      const currentDay = now.getDay(); 
+      const currentHour = now.getHours();
+
+      /**
+       * LOGIKA PENAMPILAN:
+       * 1. Data diakumulasi dulu selama 1 minggu penuh.
+       * 2. Pemenang baru muncul di dashboard pada hari Senin jam 06:00 WIB.
+       * 3. Selama Senin-Jumat, yang ditampilkan adalah "Pemenang Minggu Lalu".
+       * 4. Hari Sabtu & Minggu kartu disembunyikan untuk kalkulasi.
+       */
       
-      // A. LOGIKA MINGGU LALU (Tujuan Utama)
+      const isWeekend = currentDay === 6 || currentDay === 0;
+      const isMondayBeforeSix = currentDay === 1 && currentHour < 6;
+
+      if (isWeekend || isMondayBeforeSix) {
+        setWeeklyHero(null);
+        return;
+      }
+
+      // MENCARI RANGE MINGGU LALU (Senin s/d Sabtu)
       const lastMonday = new Date(now);
-      lastMonday.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1) - 7);
-      lastMonday.setHours(0, 0, 0, 0);
+      // Mundur ke hari senin di minggu sebelumnya
+      lastMonday.setDate(now.getDate() - (currentDay === 0 ? 6 : currentDay - 1) - 7);
+      lastMonday.setHours(6, 0, 0, 0);
 
-      const lastSunday = new Date(lastMonday);
-      lastSunday.setDate(lastMonday.getDate() + 6);
-      lastSunday.setHours(23, 59, 59, 999);
+      const endOfTrack = new Date(lastMonday);
+      endOfTrack.setDate(lastMonday.getDate() + 5); // Ke Sabtu minggu lalu
+      endOfTrack.setHours(0, 0, 0, 0);
 
-      // B. LOGIKA MINGGU BERJALAN (Untuk Fallback Minggu Pertama)
-      const thisMonday = new Date(now);
-      thisMonday.setDate(now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1));
-      thisMonday.setHours(0, 0, 0, 0);
-
-      // Coba ambil data minggu lalu dulu
       let { data, error } = await supabase
         .from('logbook')
         .select('nama, npm, kelompok, created_at')
         .gte('created_at', lastMonday.toISOString())
-        .lte('created_at', lastSunday.toISOString());
+        .lte('created_at', endOfTrack.toISOString());
 
       if (error) throw error;
 
-      // FALLBACK: Jika minggu lalu kosong (karena ini minggu pertama), ambil data minggu berjalan
+      // Jika data minggu lalu tidak ada (seperti saat awal project baru jalan), kartu tidak muncul
       if (!data || data.length === 0) {
-        const { data: currentData, error: currentError } = await supabase
-          .from('logbook')
-          .select('nama, npm, kelompok, created_at')
-          .gte('created_at', thisMonday.toISOString())
-          .lte('created_at', now.toISOString());
-        
-        if (currentError) throw currentError;
-        data = currentData;
+        setWeeklyHero(null);
+        return;
       }
 
-      if (data && data.length > 0) {
-        const counts: { [key: string]: { nama: string, npm: string, kelompok: string, count: number, lastEntry: string } } = {};
+      const stats: { [key: string]: any } = {};
+
+      data.forEach(log => {
+        const userKey = log.npm;
+        const entryDate = new Date(log.created_at);
         
-        data.forEach(log => {
-          const userKey = log.npm;
-          if (!counts[userKey]) {
-            counts[userKey] = { 
-              nama: log.nama, 
-              npm: log.npm, 
-              kelompok: log.kelompok.toString(), 
-              count: 0, 
-              lastEntry: log.created_at 
-            };
-          }
+        // Skor Kecepatan: Patokan jam 06:00 pagi hari itu
+        const startOfDay = new Date(entryDate);
+        startOfDay.setHours(6, 0, 0, 0);
+        
+        const diffInMinutes = Math.max(0, (entryDate.getTime() - startOfDay.getTime()) / (1000 * 60));
+        const speedScore = Math.max(0, 1000 - diffInMinutes);
 
-          counts[userKey].count += 1;
-          if (new Date(log.created_at) > new Date(counts[userKey].lastEntry)) {
-            counts[userKey].lastEntry = log.created_at;
-          }
-        });
+        if (!stats[userKey]) {
+          stats[userKey] = { 
+            nama: log.nama, 
+            npm: log.npm, 
+            kelompok: log.kelompok.toString(), 
+            count: 0, 
+            totalResponseScore: 0 
+          };
+        }
 
-        const sorted = Object.values(counts).sort((a, b) => {
-          if (b.count !== a.count) return b.count - a.count;
-          return new Date(b.lastEntry).getTime() - new Date(a.lastEntry).getTime();
-        });
+        stats[userKey].count += 1;
+        stats[userKey].totalResponseScore += speedScore;
+      });
 
-        if (sorted[0]) setWeeklyHero(sorted[0]);
-      }
+      const sorted = Object.values(stats).sort((a: any, b: any) => {
+        const scoreA = (a.count * 1000) + a.totalResponseScore;
+        const scoreB = (b.count * 1000) + b.totalResponseScore;
+        return scoreB - scoreA;
+      });
+
+      if (sorted[0]) setWeeklyHero(sorted[0]);
+
     } catch (err) {
-      console.error("Error Hero:", err);
+      console.error("Error Weekly Hero calculation:", err);
     }
   };
 
