@@ -29,7 +29,7 @@ const DAFTAR_MAHASISWA = [
   { npm: "25025010114", nama: "ANGEL MONICA NH" },
   { npm: "25025010115", nama: "USWATUN KHASANAH" },
   { npm: "25025010116", nama: "DHARMA AJI WISNU Utama" },
-  { npm: "25025010117", nama: "KEIKY RESVANTI RAMADHANTI" },
+  { npm: "25025010117", nama: "KEIKY RESVANTI RAMADHIANTI" },
   { npm: "25025010118", nama: "ANDINI SALWA INGGRAINI" },
   { npm: "25025010119", nama: "TALITHA LISTYA SALSABILA" },
   { npm: "25025010120", nama: "ANDREA BENAYA PAGONGGANG" },
@@ -57,7 +57,6 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
   const supabase = createClient();
   const komoditasRaw = decodeURIComponent(params.komoditas);
 
-  // LOGIKA BARU: State untuk menampung banyak pengamat
   const [selectedObservers, setSelectedObservers] = useState<any[]>([]);
 
   const [formData, setFormData] = useState({
@@ -67,12 +66,22 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
     tanggal: new Date().toISOString().split('T')[0],
     kegiatan: '',
     keterangan: '',
-    foto: ''
+    foto: '',
+    status_akses: 'Normal'
   });
 
   const [loading, setLoading] = useState(false);
 
-  // LOGIKA BARU: Tambah pengamat ke daftar (Multiple Select)
+  // Jika status_akses berubah menjadi Terkunci, reset observer
+  useEffect(() => {
+    if (formData.status_akses === "Terkunci") {
+      setSelectedObservers([]);
+      setFormData(prev => ({ ...prev, nama: 'Libur', npm: 'Libur' }));
+    } else {
+      setFormData(prev => ({ ...prev, nama: '', npm: '' }));
+    }
+  }, [formData.status_akses]);
+
   const handleAddObserver = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedNama = e.target.value;
     const mhs = DAFTAR_MAHASISWA.find(item => item.nama === selectedNama);
@@ -81,7 +90,6 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
       const newObservers = [...selectedObservers, mhs];
       setSelectedObservers(newObservers);
       
-      // Update string untuk preview (tetap menjaga konsistensi formData)
       setFormData({
         ...formData,
         nama: newObservers.map(o => o.nama).join(', '),
@@ -90,7 +98,6 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
     }
   };
 
-  // LOGIKA BARU: Hapus pengamat dari daftar
   const removeObserver = (npm: string) => {
     const filtered = selectedObservers.filter(o => o.npm !== npm);
     setSelectedObservers(filtered);
@@ -101,27 +108,21 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
     });
   };
 
-  // LOGIKA PENAMBAHAN VALIDASI FOTO (MAKS 2MB & JPG)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // 1. Validasi Tipe File (Harus JPG/JPEG)
       const allowedTypes = ['image/jpeg', 'image/jpg'];
       if (!allowedTypes.includes(file.type)) {
         alert("❌ Error: Format file harus JPG atau JPEG!");
-        e.target.value = ""; // Reset input file
+        e.target.value = ""; 
         return;
       }
-
-      // 2. Validasi Ukuran File (Maksimal 2 MB = 2 * 1024 * 1024 bytes)
       const maxSize = 2 * 1024 * 1024;
       if (file.size > maxSize) {
         alert("❌ Error: Ukuran foto terlalu besar! Maksimal adalah 2 MB.");
-        e.target.value = ""; // Reset input file
+        e.target.value = ""; 
         return;
       }
-
-      // Jika lolos validasi, baca file
       const reader = new FileReader();
       reader.onloadend = () => {
         setFormData({ ...formData, foto: reader.result as string });
@@ -132,7 +133,12 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedObservers.length === 0) return alert("Pilih minimal 1 nama pengamat!");
+    
+    // Validasi bersyarat: Jika Normal wajib pilih nama, jika Terkunci tidak perlu
+    if (formData.status_akses === "Normal" && selectedObservers.length === 0) {
+      return alert("Pilih minimal 1 nama pengamat!");
+    }
+    
     if (!formData.foto) return alert("Wajib upload foto dokumentasi!");
     setLoading(true);
 
@@ -149,7 +155,7 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
 
       if (error) throw error;
 
-      alert("✅ Laporan Berhasil Disinkronkan ke Cloud!");
+      alert("✅ Laporan Berhasil Disinkronkan!");
       router.push('/riwayat-logbook');
     } catch (error: any) {
       alert("❌ Error: " + error.message);
@@ -168,39 +174,60 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Dropdown Nama Mahasiswa (Multiple) */}
+          {/* Status Akses */}
           <div>
-            <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Pilih Pengamat (Bisa {'>'}1)</label>
+            <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Status Akses Lokasi</label>
             <select 
-              className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-600 rounded-3xl outline-none transition-all appearance-none cursor-pointer font-bold text-sm"
-              onChange={handleAddObserver}
-              value=""
+              className="w-full p-4 bg-yellow-50 border-2 border-yellow-200 focus:border-blue-600 rounded-3xl outline-none transition-all font-bold text-sm"
+              value={formData.status_akses}
+              onChange={(e) => setFormData({...formData, status_akses: e.target.value})}
             >
-              <option value="">-- Tambah Nama Pengamat --</option>
-              {DAFTAR_MAHASISWA.map((mhs, idx) => (
-                <option key={idx} value={mhs.nama}>{mhs.nama}</option>
-              ))}
+              <option value="Normal">🟢 Akses Normal (Bisa Masuk)</option>
+              <option value="Terkunci">🔴 Akses Terkunci (Hari Libur)</option>
             </select>
+          </div>
 
-            <div className="flex flex-wrap gap-2 mt-3 px-2">
-              {selectedObservers.map((o) => (
-                <div key={o.npm} className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-[10px] font-black flex items-center gap-2 border border-blue-100">
-                  {o.nama}
-                  <button type="button" onClick={() => removeObserver(o.npm)} className="hover:text-red-600 text-lg leading-none">&times;</button>
+          {/* Render kondisional: Jika Normal tampilkan pilih nama, jika Terkunci tampilkan info Libur */}
+          {formData.status_akses === "Normal" ? (
+            <>
+              <div>
+                <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Pilih Pengamat (Bisa {'>'}1)</label>
+                <select 
+                  className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-600 rounded-3xl outline-none transition-all appearance-none cursor-pointer font-bold text-sm"
+                  onChange={handleAddObserver}
+                  value=""
+                >
+                  <option value="">-- Tambah Nama Pengamat --</option>
+                  {DAFTAR_MAHASISWA.map((mhs, idx) => (
+                    <option key={idx} value={mhs.nama}>{mhs.nama}</option>
+                  ))}
+                </select>
+
+                <div className="flex flex-wrap gap-2 mt-3 px-2">
+                  {selectedObservers.map((o) => (
+                    <div key={o.npm} className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-[10px] font-black flex items-center gap-2 border border-blue-100">
+                      {o.nama}
+                      <button type="button" onClick={() => removeObserver(o.npm)} className="hover:text-red-600 text-lg leading-none">&times;</button>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
 
-          <div>
-            <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">NPM Pengamat</label>
-            <input 
-              type="text" readOnly
-              className="w-full p-4 bg-slate-100 border-none rounded-3xl outline-none font-mono text-slate-500 text-[10px]"
-              value={formData.npm}
-              placeholder="NPM akan muncul otomatis di sini..."
-            />
-          </div>
+              <div>
+                <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">NPM Pengamat</label>
+                <input 
+                  type="text" readOnly
+                  className="w-full p-4 bg-slate-100 border-none rounded-3xl outline-none font-mono text-slate-500 text-[10px]"
+                  value={formData.npm}
+                  placeholder="NPM akan muncul otomatis di sini..."
+                />
+              </div>
+            </>
+          ) : (
+            <div className="p-4 bg-red-50 rounded-3xl border border-red-100">
+               <p className="text-[10px] font-black text-red-600 uppercase tracking-widest text-center">Data Nama & NPM otomatis diatur sebagai "Libur"</p>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -225,7 +252,7 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
           <div>
             <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Kegiatan</label>
             <input 
-              type="text" required placeholder="Contoh: Penyiangan gulma"
+              type="text" required placeholder={formData.status_akses === "Terkunci" ? "Contoh: Libur Nasional" : "Contoh: Penyiangan gulma"}
               className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-600 rounded-3xl outline-none text-sm font-medium"
               onChange={(e) => setFormData({...formData, kegiatan: e.target.value})}
             />
@@ -234,19 +261,18 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
           <div>
             <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Keterangan</label>
             <textarea 
-              placeholder="Jelaskan detail pengamatan/kegiatan..."
+              placeholder={formData.status_akses === "Terkunci" ? "Sertakan alasan (misal: Libur Nasional Hari Pendidikan dan Tangga Terkunci)" : "Jelaskan detail pengamatan/kegiatan..."}
               className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-600 rounded-3xl outline-none h-24 text-sm resize-none"
               onChange={(e) => setFormData({...formData, keterangan: e.target.value})}
             ></textarea>
           </div>
 
           <div className="relative group">
-            {/* Menambahkan accept=".jpg,.jpeg" untuk filter awal di browser */}
             <input type="file" accept=".jpg,.jpeg" onChange={handleFileChange} className="hidden" id="upload-foto" />
             <label htmlFor="upload-foto" className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-200 rounded-3xl cursor-pointer group-hover:border-blue-600 transition-all">
               <span className="text-2xl mb-2">{formData.foto ? "✅" : "📸"}</span>
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-blue-600 text-center">
-                {formData.foto ? "Foto Berhasil Dipilih" : "Upload Dokumentasi (Maks 2MB, JPG)"}
+                {formData.foto ? "Foto Berhasil Dipilih" : formData.status_akses === "Terkunci" ? "Upload Bukti Gerbang Terkunci" : "Upload Dokumentasi (Maks 2MB, JPG)"}
               </span>
             </label>
           </div>
