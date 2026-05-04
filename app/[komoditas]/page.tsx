@@ -58,6 +58,9 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
   const komoditasRaw = decodeURIComponent(params.komoditas);
 
   const [selectedObservers, setSelectedObservers] = useState<any[]>([]);
+  // LOGIKA BARU: State untuk pembatasan waktu
+  const [isLocked, setIsLocked] = useState(false);
+  const [countdown, setCountdown] = useState("");
 
   const [formData, setFormData] = useState({
     nama: '',
@@ -71,6 +74,54 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
   });
 
   const [loading, setLoading] = useState(false);
+
+  // LOGIKA BARU: Effect untuk Countdown dan Pengecekan Jam Operasional
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      // Konversi ke WIB (UTC+7)
+      const wibTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Jakarta" }));
+      
+      const currentHour = wibTime.getHours();
+      const currentMinute = wibTime.getMinutes();
+      const currentSecond = wibTime.getSeconds();
+
+      const startHour = 15;
+      const endHour = 20;
+
+      // Cek apakah terkunci
+      if (currentHour < startHour || currentHour >= endHour) {
+        setIsLocked(true);
+        
+        // Hitung mundur ke jam 15:00
+        let target = new Date(wibTime);
+        if (currentHour >= endHour) target.setDate(target.getDate() + 1);
+        target.setHours(startHour, 0, 0, 0);
+        
+        const diff = target.getTime() - wibTime.getTime();
+        setCountdown(formatDiff(diff));
+      } else {
+        setIsLocked(false);
+        
+        // Hitung mundur sisa waktu operasional (ke jam 20:00)
+        let target = new Date(wibTime);
+        target.setHours(endHour, 0, 0, 0);
+        
+        const diff = target.getTime() - wibTime.getTime();
+        setCountdown(formatDiff(diff));
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  // Helper format waktu
+  const formatDiff = (ms: number) => {
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    return `${h}j ${m}m ${s}d`;
+  };
 
   // Jika status_akses berubah menjadi Terkunci, reset observer
   useEffect(() => {
@@ -134,6 +185,12 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Logika pengunci submit
+    if (isLocked) {
+      alert("⚠️ Maaf, akses pengisian sedang ditutup!");
+      return;
+    }
+
     // Validasi bersyarat: Jika Normal wajib pilih nama, jika Terkunci tidak perlu
     if (formData.status_akses === "Normal" && selectedObservers.length === 0) {
       return alert("Pilih minimal 1 nama pengamat!");
@@ -171,120 +228,148 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
           <button onClick={() => router.push('/')} className="text-[10px] font-black text-slate-300 hover:text-black uppercase tracking-widest mb-4 inline-block transition-colors">← Batal</button>
           <h1 className="text-2xl font-black uppercase tracking-tighter leading-none">Isi Logbook</h1>
           <p className="text-blue-600 font-bold text-xs mt-2 uppercase tracking-widest">{komoditasRaw}</p>
+          
+          {/* LOGIKA BARU: Tampilan Widget Countdown */}
+          <div className={`mt-4 p-3 rounded-2xl border-2 inline-block px-6 ${isLocked ? 'bg-red-50 border-red-100' : 'bg-green-50 border-green-100'}`}>
+             <p className={`text-[9px] font-black uppercase tracking-widest ${isLocked ? 'text-red-500' : 'text-green-600'}`}>
+                {isLocked ? "Akses Terkunci - Buka Dalam:" : "Akses Terbuka - Sisa Waktu:"}
+             </p>
+             <p className={`text-lg font-mono font-black ${isLocked ? 'text-red-600' : 'text-green-700'}`}>
+                {countdown}
+             </p>
+          </div>
         </header>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Status Akses */}
-          <div>
-            <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Status Akses Lokasi</label>
-            <select 
-              className="w-full p-4 bg-yellow-50 border-2 border-yellow-200 focus:border-blue-600 rounded-3xl outline-none transition-all font-bold text-sm"
-              value={formData.status_akses}
-              onChange={(e) => setFormData({...formData, status_akses: e.target.value})}
+        {/* LOGIKA BARU: Overlay Kunci jika diluar jam operasional */}
+        {isLocked ? (
+          <div className="text-center py-10">
+            <span className="text-5xl">🔒</span>
+            <h2 className="text-xl font-black uppercase mt-4">Akses Ditutup</h2>
+            <p className="text-sm text-slate-500 font-medium mt-2">
+              Pengisian logbook hanya tersedia pukul <br/>
+              <span className="font-black text-slate-900">15.00 - 20.00 WIB</span>
+            </p>
+            <button 
+              onClick={() => router.push('/')}
+              className="mt-8 bg-slate-900 text-white px-8 py-4 rounded-full text-[10px] font-black uppercase tracking-widest"
             >
-              <option value="Normal">🟢 Akses Normal (Bisa Masuk)</option>
-              <option value="Terkunci">🔴 Akses Terkunci (Hari Libur)</option>
-            </select>
+              Kembali Nanti
+            </button>
           </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Status Akses */}
+            <div>
+              <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Status Akses Lokasi</label>
+              <select 
+                className="w-full p-4 bg-yellow-50 border-2 border-yellow-200 focus:border-blue-600 rounded-3xl outline-none transition-all font-bold text-sm"
+                value={formData.status_akses}
+                onChange={(e) => setFormData({...formData, status_akses: e.target.value})}
+              >
+                <option value="Normal">🟢 Akses Normal (Bisa Masuk)</option>
+                <option value="Terkunci">🔴 Akses Terkunci (Hari Libur)</option>
+              </select>
+            </div>
 
-          {/* Render kondisional: Jika Normal tampilkan pilih nama, jika Terkunci tampilkan info Libur */}
-          {formData.status_akses === "Normal" ? (
-            <>
-              <div>
-                <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Pilih Pengamat (Bisa {'>'}1)</label>
-                <select 
-                  className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-600 rounded-3xl outline-none transition-all appearance-none cursor-pointer font-bold text-sm"
-                  onChange={handleAddObserver}
-                  value=""
-                >
-                  <option value="">-- Tambah Nama Pengamat --</option>
-                  {DAFTAR_MAHASISWA.map((mhs, idx) => (
-                    <option key={idx} value={mhs.nama}>{mhs.nama}</option>
-                  ))}
-                </select>
+            {/* Render kondisional: Jika Normal tampilkan pilih nama, jika Terkunci tampilkan info Libur */}
+            {formData.status_akses === "Normal" ? (
+              <>
+                <div>
+                  <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Pilih Pengamat (Bisa {'>'}1)</label>
+                  <select 
+                    className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-600 rounded-3xl outline-none transition-all appearance-none cursor-pointer font-bold text-sm"
+                    onChange={handleAddObserver}
+                    value=""
+                  >
+                    <option value="">-- Tambah Nama Pengamat --</option>
+                    {DAFTAR_MAHASISWA.map((mhs, idx) => (
+                      <option key={idx} value={mhs.nama}>{mhs.nama}</option>
+                    ))}
+                  </select>
 
-                <div className="flex flex-wrap gap-2 mt-3 px-2">
-                  {selectedObservers.map((o) => (
-                    <div key={o.npm} className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-[10px] font-black flex items-center gap-2 border border-blue-100">
-                      {o.nama}
-                      <button type="button" onClick={() => removeObserver(o.npm)} className="hover:text-red-600 text-lg leading-none">&times;</button>
-                    </div>
-                  ))}
+                  <div className="flex flex-wrap gap-2 mt-3 px-2">
+                    {selectedObservers.map((o) => (
+                      <div key={o.npm} className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-[10px] font-black flex items-center gap-2 border border-blue-100">
+                        {o.nama}
+                        <button type="button" onClick={() => removeObserver(o.npm)} className="hover:text-red-600 text-lg leading-none">&times;</button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
+                <div>
+                  <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">NPM Pengamat</label>
+                  <input 
+                    type="text" readOnly
+                    className="w-full p-4 bg-slate-100 border-none rounded-3xl outline-none font-mono text-slate-500 text-[10px]"
+                    value={formData.npm}
+                    placeholder="NPM akan muncul otomatis di sini..."
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="p-4 bg-red-50 rounded-3xl border border-red-100">
+                <p className="text-[10px] font-black text-red-600 uppercase tracking-widest text-center">Data Nama & NPM otomatis diatur sebagai "Libur"</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">NPM Pengamat</label>
+                <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Kelompok</label>
                 <input 
-                  type="text" readOnly
-                  className="w-full p-4 bg-slate-100 border-none rounded-3xl outline-none font-mono text-slate-500 text-[10px]"
-                  value={formData.npm}
-                  placeholder="NPM akan muncul otomatis di sini..."
+                  type="number" required placeholder="No"
+                  className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-600 rounded-3xl outline-none font-bold"
+                  onChange={(e) => setFormData({...formData, kelompok: e.target.value})}
                 />
               </div>
-            </>
-          ) : (
-            <div className="p-4 bg-red-50 rounded-3xl border border-red-100">
-               <p className="text-[10px] font-black text-red-600 uppercase tracking-widest text-center">Data Nama & NPM otomatis diatur sebagai "Libur"</p>
+              <div>
+                <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Tanggal</label>
+                <input 
+                  type="date" required
+                  className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-600 rounded-3xl outline-none font-bold text-sm"
+                  value={formData.tanggal}
+                  onChange={(e) => setFormData({...formData, tanggal: e.target.value})}
+                />
+              </div>
             </div>
-          )}
 
-          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Kelompok</label>
+              <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Kegiatan</label>
               <input 
-                type="number" required placeholder="No"
-                className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-600 rounded-3xl outline-none font-bold"
-                onChange={(e) => setFormData({...formData, kelompok: e.target.value})}
+                type="text" required placeholder={formData.status_akses === "Terkunci" ? "Contoh: Libur Nasional" : "Contoh: Penyiangan gulma"}
+                className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-600 rounded-3xl outline-none text-sm font-medium"
+                onChange={(e) => setFormData({...formData, kegiatan: e.target.value})}
               />
             </div>
+
             <div>
-              <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Tanggal</label>
-              <input 
-                type="date" required
-                className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-600 rounded-3xl outline-none font-bold text-sm"
-                value={formData.tanggal}
-                onChange={(e) => setFormData({...formData, tanggal: e.target.value})}
-              />
+              <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Keterangan</label>
+              <textarea 
+                placeholder={formData.status_akses === "Terkunci" ? "Sertakan alasan (misal: Libur Nasional Hari Pendidikan dan Tangga Terkunci)" : "Jelaskan detail pengamatan/kegiatan..."}
+                className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-600 rounded-3xl outline-none h-24 text-sm resize-none"
+                onChange={(e) => setFormData({...formData, keterangan: e.target.value})}
+              ></textarea>
             </div>
-          </div>
 
-          <div>
-            <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Kegiatan</label>
-            <input 
-              type="text" required placeholder={formData.status_akses === "Terkunci" ? "Contoh: Libur Nasional" : "Contoh: Penyiangan gulma"}
-              className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-600 rounded-3xl outline-none text-sm font-medium"
-              onChange={(e) => setFormData({...formData, kegiatan: e.target.value})}
-            />
-          </div>
+            <div className="relative group">
+              <input type="file" accept=".jpg,.jpeg" onChange={handleFileChange} className="hidden" id="upload-foto" />
+              <label htmlFor="upload-foto" className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-200 rounded-3xl cursor-pointer group-hover:border-blue-600 transition-all">
+                <span className="text-2xl mb-2">{formData.foto ? "✅" : "📸"}</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-blue-600 text-center">
+                  {formData.foto ? "Foto Berhasil Dipilih" : formData.status_akses === "Terkunci" ? "Upload Bukti Gerbang Terkunci" : "Upload Dokumentasi (Maks 2MB, JPG)"}
+                </span>
+              </label>
+            </div>
 
-          <div>
-            <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Keterangan</label>
-            <textarea 
-              placeholder={formData.status_akses === "Terkunci" ? "Sertakan alasan (misal: Libur Nasional Hari Pendidikan dan Tangga Terkunci)" : "Jelaskan detail pengamatan/kegiatan..."}
-              className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-blue-600 rounded-3xl outline-none h-24 text-sm resize-none"
-              onChange={(e) => setFormData({...formData, keterangan: e.target.value})}
-            ></textarea>
-          </div>
-
-          <div className="relative group">
-            <input type="file" accept=".jpg,.jpeg" onChange={handleFileChange} className="hidden" id="upload-foto" />
-            <label htmlFor="upload-foto" className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-200 rounded-3xl cursor-pointer group-hover:border-blue-600 transition-all">
-              <span className="text-2xl mb-2">{formData.foto ? "✅" : "📸"}</span>
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-blue-600 text-center">
-                {formData.foto ? "Foto Berhasil Dipilih" : formData.status_akses === "Terkunci" ? "Upload Bukti Gerbang Terkunci" : "Upload Dokumentasi (Maks 2MB, JPG)"}
-              </span>
-            </label>
-          </div>
-
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="w-full bg-slate-950 text-white p-5 rounded-[2rem] font-black uppercase tracking-[0.2em] text-xs hover:bg-blue-600 transition-all shadow-xl active:scale-95 disabled:opacity-50"
-          >
-            {loading ? "Menyinkronkan..." : "Kirim Laporan"}
-          </button>
-        </form>
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="w-full bg-slate-950 text-white p-5 rounded-[2rem] font-black uppercase tracking-[0.2em] text-xs hover:bg-blue-600 transition-all shadow-xl active:scale-95 disabled:opacity-50"
+            >
+              {loading ? "Menyinkronkan..." : "Kirim Laporan"}
+            </button>
+          </form>
+        )}
       </div>
     </main>
   );
