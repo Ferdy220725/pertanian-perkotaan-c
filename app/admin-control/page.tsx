@@ -1,9 +1,9 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js'; // Pastikan sudah install @supabase/supabase-js
+import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 
-// Inisialisasi Supabase (Ganti dengan env kamu)
+// Inisialisasi Supabase
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -16,18 +16,22 @@ export default function AdminControl() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
-  // 1. Verifikasi Admin (Gunakan password rahasia untuk masuk ke panel ini)
+  // LOGIKA BARU: State untuk jam operasional
+  const [opHours, setOpHours] = useState({ start: 15, end: 20 });
+
+  // 1. Verifikasi Admin
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (masterPass === "ferdy22") { 
       setIsAdmin(true);
       fetchPasswords();
+      fetchOpHours(); // Ambil jam operasional saat login
     } else {
       alert("Password Admin Salah!");
     }
   };
 
-  // 2. Ambil data password dari Supabase
+  // 2. Ambil data password dari Supabase (Logika Lama Tetap Ada)
   const fetchPasswords = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -42,7 +46,15 @@ export default function AdminControl() {
     setLoading(false);
   };
 
-  // 3. Update atau Simpan Password Kelompok
+  // LOGIKA BARU: Ambil jam operasional dari tabel 'config_jam'
+  const fetchOpHours = async () => {
+    const { data, error } = await supabase.from('config_jam').select('*').eq('id', 1).single();
+    if (data) {
+      setOpHours({ start: data.start_hour, end: data.end_hour });
+    }
+  };
+
+  // 3. Update atau Simpan Password Kelompok (Logika Lama Tetap Ada)
   const savePassword = async (kelompok: number, newPassword: string) => {
     setMessage({ type: 'loading', text: 'Menyimpan...' });
     
@@ -57,6 +69,21 @@ export default function AdminControl() {
       fetchPasswords();
     }
     
+    setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+  };
+
+  // LOGIKA BARU: Simpan pengaturan jam operasional
+  const saveOpHours = async () => {
+    setMessage({ type: 'loading', text: 'Mengupdate Jam...' });
+    const { error } = await supabase
+      .from('config_jam')
+      .upsert({ id: 1, start_hour: opHours.start, end_hour: opHours.end });
+
+    if (error) {
+      setMessage({ type: 'error', text: 'Gagal update jam: ' + error.message });
+    } else {
+      setMessage({ type: 'success', text: 'Waktu operasional berhasil diperbarui!' });
+    }
     setTimeout(() => setMessage({ type: '', text: '' }), 3000);
   };
 
@@ -88,8 +115,8 @@ export default function AdminControl() {
       <div className="max-w-4xl mx-auto">
         <header className="mb-10 flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tighter">PASSWORD <span className="text-[#800020]">MANAGEMENT</span></h1>
-            <p className="text-slate-500 font-medium">Atur akses unik untuk setiap kelompok Agrotek C.</p>
+            <h1 className="text-3xl font-black text-slate-900 tracking-tighter">ADMIN <span className="text-[#800020]">CONTROL</span></h1>
+            <p className="text-slate-500 font-medium">Kelola password kelompok dan waktu akses operasional.</p>
           </div>
           <Link href="/" className="bg-white px-6 py-3 rounded-full text-xs font-black shadow-sm border border-slate-200 uppercase tracking-widest hover:bg-slate-50">Tutup</Link>
         </header>
@@ -100,7 +127,42 @@ export default function AdminControl() {
           </div>
         )}
 
+        {/* --- LOGIKA BARU: KONTROL JAM OPERASIONAL --- */}
+        <div className="mb-10 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200">
+          <h2 className="text-sm font-black text-[#800020] uppercase tracking-widest mb-6">Pengaturan Jam Operasional (WIB)</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Jam Buka (Contoh: 15)</label>
+              <input 
+                type="number" min="0" max="23"
+                className="w-full p-4 rounded-2xl bg-slate-50 border-2 border-slate-100 focus:border-[#800020] outline-none font-bold"
+                value={opHours.start}
+                onChange={(e) => setOpHours({...opHours, start: parseInt(e.target.value)})}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Jam Tutup (Contoh: 20)</label>
+              <input 
+                type="number" min="0" max="23"
+                className="w-full p-4 rounded-2xl bg-slate-50 border-2 border-slate-100 focus:border-[#800020] outline-none font-bold"
+                value={opHours.end}
+                onChange={(e) => setOpHours({...opHours, end: parseInt(e.target.value)})}
+              />
+            </div>
+          </div>
+          <button 
+            onClick={saveOpHours}
+            className="mt-6 w-full bg-[#800020] text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-black transition-all"
+          >
+            Update Jam Operasional
+          </button>
+        </div>
+
+        {/* --- LOGIKA LAMA: PENGELOLAAN PASSWORD (TETAP DI SINI) --- */}
         <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
+          <div className="p-8 border-b border-slate-100">
+             <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest">Manajemen Password Kelompok</h2>
+          </div>
           <table className="w-full text-left border-collapse">
             <thead className="bg-slate-50 border-bottom border-slate-100">
               <tr>
