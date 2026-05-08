@@ -110,14 +110,21 @@ export default function RiwayatPage() {
     );
   };
 
- const fetchGroupLogs = async (noKelompok: string) => {
-  // 1. Hitung tanggal 7 hari yang lalu dari hari ini
+const fetchGroupLogs = async (noKelompok: string) => {
+  // --- LOGIKA BARU: MENCARI HARI SENIN MINGGU INI ---
   const hariIni = new Date();
-  const tujuhHariLalu = new Date();
-  tujuhHariLalu.setDate(hariIni.getDate() - 7);
+  // getDay() mengembalikan 0 (Minggu) sampai 6 (Sabtu)
+  const day = hariIni.getDay(); 
   
-  // Format ke YYYY-MM-DD agar sesuai dengan kolom 'tanggal' di database
-  const tanggalFilter = tujuhHariLalu.toISOString().split('T')[0];
+  // Hitung selisih untuk kembali ke hari Senin
+  // Jika hari ini Minggu (0), kita butuh mundur 6 hari.
+  // Jika Senin (1), mundur 0 hari. Jika Selasa (2), mundur 1 hari, dst.
+  const diff = hariIni.getDate() - (day === 0 ? 6 : day - 1);
+  
+  const seninMingguIni = new Date(hariIni.setDate(diff));
+  
+  // Format ke YYYY-MM-DD
+  const tanggalFilter = seninMingguIni.toISOString().split('T')[0];
 
   setLoadingGroup(noKelompok);
   try {
@@ -125,14 +132,12 @@ export default function RiwayatPage() {
       .from('logbook')
       .select('*')
       .eq('kelompok', parseInt(noKelompok))
-      .gte('tanggal', tanggalFilter) // gte = Greater Than or Equal (Lebih besar atau sama dengan 7 hari lalu)
+      .gte('tanggal', tanggalFilter) // Hanya ambil data mulai dari Senin minggu ini saja
       .order('tanggal', { ascending: true });
 
     if (error) throw error;
 
-    // Simpan ke state
     setDataRiwayat(prev => {
-      // Hapus data lama kelompok ini di state (jika ada) lalu ganti dengan yang baru
       const filteredPrev = prev.filter(item => item.kelompok !== parseInt(noKelompok));
       return [...filteredPrev, ...(data || [])];
     });
