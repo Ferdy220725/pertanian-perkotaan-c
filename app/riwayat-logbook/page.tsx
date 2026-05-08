@@ -11,11 +11,16 @@ export default function RiwayatPage() {
   const supabase = createClient();
   const [dataRiwayat, setDataRiwayat] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingGroup, setLoadingGroup] = useState<string | null>(null); // Loading khusus per kelompok
 
   // STATE LOGIKA ASLI
   const [userRole, setUserRole] = useState<'mahasiswa' | 'dosen' | null>(null);
   const [identitasUser, setIdentitasUser] = useState({ kelompok: '', nama: '', npm: '' });
   const [isVerified, setIsVerified] = useState(false);
+
+  // LOGIKA BARU: State untuk password khusus dosen di awal
+  const [masterPassInput, setMasterPassInput] = useState('');
+  const [selectedDosen, setSelectedDosen] = useState<{nama: string, npm: string} | null>(null);
 
   const [unlockedGroups, setUnlockedGroups] = useState<string[]>([]);
   const [passInput, setPassInput] = useState<{ [key: string]: string }>({});
@@ -78,10 +83,7 @@ export default function RiwayatPage() {
   };
 
   const renderKeaktifan = (noKelompok: string) => {
-    if (userRole === 'dosen') return null;
     const logs = kelompokGroups[noKelompok] || [];
-    
-    // Logic filter: Hanya menampilkan anggota yang terdeteksi di log kelompok ini
     const npmTerdeteksi = Array.from(new Set(logs.flatMap((log: any) => log.npm ? log.npm.split(/[\s,]+/) : [])));
 
     const summary = mahasiswaList
@@ -108,26 +110,42 @@ export default function RiwayatPage() {
     );
   };
 
-  const fetchGroupLogs = async (noKelompok: string) => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('logbook')
-        .select('*')
-        .eq('kelompok', parseInt(noKelompok))
-        .order('created_at', { ascending: true });
+ const fetchGroupLogs = async (noKelompok: string) => {
+  // 1. Hitung tanggal 7 hari yang lalu dari hari ini
+  const hariIni = new Date();
+  const tujuhHariLalu = new Date();
+  tujuhHariLalu.setDate(hariIni.getDate() - 7);
+  
+  // Format ke YYYY-MM-DD agar sesuai dengan kolom 'tanggal' di database
+  const tanggalFilter = tujuhHariLalu.toISOString().split('T')[0];
 
-      if (error) throw error;
-      setDataRiwayat(prev => {
-        const filteredPrev = prev.filter(item => item.kelompok !== parseInt(noKelompok));
-        return [...filteredPrev, ...(data || [])];
-      });
-    } catch (error: any) {
-      alert("Gagal mengambil data: " + error.message);
-    } finally {
-      setLoading(false);
+  setLoadingGroup(noKelompok);
+  try {
+    const { data, error } = await supabase
+      .from('logbook')
+      .select('*')
+      .eq('kelompok', parseInt(noKelompok))
+      .gte('tanggal', tanggalFilter) // gte = Greater Than or Equal (Lebih besar atau sama dengan 7 hari lalu)
+      .order('tanggal', { ascending: true });
+
+    if (error) throw error;
+
+    // Simpan ke state
+    setDataRiwayat(prev => {
+      // Hapus data lama kelompok ini di state (jika ada) lalu ganti dengan yang baru
+      const filteredPrev = prev.filter(item => item.kelompok !== parseInt(noKelompok));
+      return [...filteredPrev, ...(data || [])];
+    });
+
+    if (!unlockedGroups.includes(noKelompok)) {
+      setUnlockedGroups(prev => [...prev, noKelompok]);
     }
-  };
+  } catch (error: any) {
+    alert("Gagal mengambil data: " + error.message);
+  } finally {
+    setLoadingGroup(null);
+  }
+};
 
   const fetchLogs = async () => {
     if (unlockedGroups.length === 0) return;
@@ -164,7 +182,7 @@ export default function RiwayatPage() {
       try {
         const { error } = await supabase.from('logbook').delete().eq('id', id);
         if (error) throw error;
-        alert("✅ Berhasil dihapus!Refresh halaman kamu ya");
+        alert("✅ Berhasil dihapus! Refresh halaman kamu ya");
         fetchGroupLogs(noKelompok);
       } catch (error: any) { alert("Gagal menghapus: " + error.message); }
     }
@@ -188,7 +206,7 @@ export default function RiwayatPage() {
       body: tableData,
       theme: 'grid',
       headStyles: { fillColor: [0, 0, 0], textColor: [255, 255, 255] },
-      styles: { fontSize: 8, cellPadding: 2, valign: 'middle', lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] }, // Teks Hitam
+      styles: { fontSize: 8, cellPadding: 2, valign: 'middle', lineColor: [0, 0, 0], lineWidth: 0.5, textColor: [0, 0, 0] },
       columnStyles: { 5: { cellWidth: 30 } },
       didDrawCell: (data) => {
         if (data.section === 'body' && data.column.index === 5) {
@@ -202,21 +220,34 @@ export default function RiwayatPage() {
       bodyStyles: { minCellHeight: 20 }
     });
 
-    if (userRole !== 'dosen') {
-      const finalY = (doc as any).lastAutoTable.finalY + 10;
-      doc.setFontSize(12);
-      doc.setFont("Times New Roman", "bold");
-      doc.setTextColor(0, 0, 0); 
-      doc.text("Total Pengamatan & Pemeliharaan", 14, finalY);
-      const npmTerPdf = Array.from(new Set(dataSpesifik.flatMap((log: any) => log.npm ? log.npm.split(/[\s,]+/) : [])));
-      const sumStr = mahasiswaList.filter(mhs => npmTerPdf.includes(mhs.npm)).map(mhs => {
-        const count = dataSpesifik.filter((log: any) => log.npm && log.npm.includes(mhs.npm)).length;
-        return `(${mhs.npm.slice(-3)}-${mhs.nama.split(' ').slice(0, 2).join(' ')}: ${count})`;
-      });
-      doc.setFontSize(7);
-      doc.text(sumStr.join('  '), 14, finalY + 7, { maxWidth: 270 });
-    }
+    const finalY = (doc as any).lastAutoTable.finalY + 10;
+    doc.setFontSize(12);
+    doc.setFont("times", "bold");
+    doc.setTextColor(0, 0, 0); 
+    doc.text("Total Pengamatan & Pemeliharaan", 14, finalY);
+    const npmTerPdf = Array.from(new Set(dataSpesifik.flatMap((log: any) => log.npm ? log.npm.split(/[\s,]+/) : [])));
+    const sumStr = mahasiswaList.filter(mhs => npmTerPdf.includes(mhs.npm)).map(mhs => {
+      const count = dataSpesifik.filter((log: any) => log.npm && log.npm.includes(mhs.npm)).length;
+      return `(${mhs.npm.slice(-3)}-${mhs.nama.split(' ').slice(0, 2).join(' ')}: ${count})`;
+    });
+    doc.setFontSize(7);
+    doc.text(sumStr.join('  '), 14, finalY + 7, { maxWidth: 270 });
+    
     doc.save(`Logbook_Kelompok_${noKelompok}.pdf`);
+  };
+
+  const handleDosenVerify = () => {
+    // Ganti "dosen123" dengan password dosen yang Anda tentukan
+    if (!selectedDosen) {
+      alert("Silahkan pilih identitas dosen terlebih dahulu!");
+      return;
+    }
+    if (masterPassInput === "dosPP25") {
+      setIdentitasUser({ nama: selectedDosen.nama, kelompok: "ALL", npm: selectedDosen.npm });
+      setIsVerified(true);
+    } else {
+      alert("Password Salah!");
+    }
   };
 
   const kelompokGroups = dataRiwayat.reduce((groups: any, item: any) => {
@@ -250,8 +281,34 @@ export default function RiwayatPage() {
           )}
           {userRole === 'dosen' && (
             <div className="space-y-4">
-              <button onClick={() => {setIdentitasUser({nama: "Ir.Purnomo Edi Sasongko, M.P.", kelompok: "ALL", npm: "D1"}); setIsVerified(true)}} className="w-full p-3 border border-black rounded-lg text-xs font-bold text-left hover:bg-slate-50">1. Ir.Purnomo Edi Sasongko, M.P.</button>
-              <button onClick={() => {setIdentitasUser({nama: "Bahrul Rizki Ramadhan, S.P., M.P.", kelompok: "ALL", npm: "D2"}); setIsVerified(true)}} className="w-full p-3 border border-black rounded-lg text-xs font-bold text-left hover:bg-slate-50">2. Bahrul Rizki Ramadhan, S.P., M.P.</button>
+               <p className="text-[10px] font-bold text-slate-400 uppercase">Pilih Identitas & Masukkan Password:</p>
+              <button 
+                onClick={() => setSelectedDosen({nama: "Ir.Purnomo Edi Sasongko, M.P.", npm: "D1"})} 
+                className={`w-full p-3 border rounded-lg text-xs font-bold text-left hover:bg-slate-50 ${selectedDosen?.npm === 'D1' ? 'border-blue-600 bg-blue-50' : 'border-black'}`}
+              >
+                1. Ir.Purnomo Edi Sasongko, M.P.
+              </button>
+              <button 
+                onClick={() => setSelectedDosen({nama: "Bahrul Rizki Ramadhan, S.P., M.P.", npm: "D2"})} 
+                className={`w-full p-3 border rounded-lg text-xs font-bold text-left hover:bg-slate-50 ${selectedDosen?.npm === 'D2' ? 'border-blue-600 bg-blue-50' : 'border-black'}`}
+              >
+                2. Bahrul Rizki Ramadhan, S.P., M.P.
+              </button>
+              
+              <input 
+                type="password" 
+                placeholder="Password Khusus Dosen" 
+                className="w-full p-3 border-2 border-black rounded-lg text-sm mt-4" 
+                value={masterPassInput}
+                onChange={(e) => setMasterPassInput(e.target.value)}
+              />
+              
+              <button 
+                onClick={handleDosenVerify}
+                className="w-full bg-black text-white py-3 rounded-lg font-black uppercase hover:bg-slate-800 transition-all mt-2"
+              >
+                Masuk sebagai Dosen
+              </button>
             </div>
           )}
         </div>
@@ -281,13 +338,32 @@ export default function RiwayatPage() {
             </div>
             {!unlockedGroups.includes(no) ? (
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-8 text-center shadow-inner">
-                <div className="flex gap-2 max-w-xs mx-auto">
-                  <input type="password" placeholder="Password..." className="flex-1 p-2 border border-slate-300 rounded-lg text-xs" onChange={(e) => setPassInput({...passInput, [no]: e.target.value})} />
-                  <button onClick={() => handleVerifyPassword(no)} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-[10px] font-bold">BUKA</button>
+                <div className="flex gap-2 max-w-xs mx-auto justify-center">
+                  {userRole === 'dosen' ? (
+                    <button 
+                      onClick={() => fetchGroupLogs(no)} 
+                      disabled={loadingGroup === no}
+                      className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg text-xs font-black uppercase hover:bg-black transition-all flex items-center justify-center gap-2"
+                    >
+                      {loadingGroup === no ? (
+                        <>
+                          <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+                          Mengambil Data...
+                        </>
+                      ) : (
+                        `Lihat Logbook Kelompok ${no}`
+                      )}
+                    </button>
+                  ) : (
+                    <>
+                      <input type="password" placeholder="Password..." className="flex-1 p-2 border border-slate-300 rounded-lg text-xs" onChange={(e) => setPassInput({...passInput, [no]: e.target.value})} />
+                      <button onClick={() => handleVerifyPassword(no)} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-[10px] font-bold">BUKA</button>
+                    </>
+                  )}
                 </div>
               </div>
             ) : !kelompokGroups[no] || kelompokGroups[no].length === 0 ? (
-              <p className="text-xs text-slate-400 italic text-center py-8">Data sedang dijemput nih, sabar ya...</p>
+              <p className="text-xs text-slate-400 italic text-center py-8">Loading...</p>
             ) : (
               <>
                 {renderKeaktifan(no)}

@@ -162,18 +162,38 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const allowedTypes = ['image/jpeg', 'image/jpg'];
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
       if (!allowedTypes.includes(file.type)) {
-        alert("❌ Error: Format file harus JPG atau JPEG!");
+        alert("❌ Error: Format file harus Gambar (JPG/PNG)!");
         return;
       }
-      if (file.size > 2 * 1024 * 1024) {
-        alert("❌ Error: Ukuran foto terlalu besar! Maksimal 2 MB.");
-        return;
-      }
+
       const reader = new FileReader();
-      reader.onloadend = () => setFormData({ ...formData, foto: reader.result as string });
       reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        
+        img.onload = () => {
+          // KONFIGURASI KOMPRESI
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800; // Ukuran lebar maksimal (sudah cukup tajam untuk PDF)
+          const scaleSize = MAX_WIDTH / img.width;
+          
+          canvas.width = MAX_WIDTH;
+          canvas.height = img.height * scaleSize;
+
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            
+            // Kualitas 0.7 artinya kompresi 70% (keseimbangan terbaik ukuran & ketajaman)
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+            
+            setFormData({ ...formData, foto: compressedBase64 });
+          }
+        };
+      };
     }
   };
 
@@ -232,8 +252,8 @@ export default function InputLogbook({ params }: { params: { komoditas: string }
               <label className="text-[10px] font-black uppercase ml-4 text-slate-400 tracking-wider">Status Akses Lokasi</label>
               <select className="w-full p-4 bg-yellow-50 border-2 border-yellow-200 focus:border-blue-600 rounded-3xl outline-none font-bold text-sm"
                 value={formData.status_akses} onChange={(e) => setFormData({...formData, status_akses: e.target.value})}>
-                <option value="Normal">🟢 Akses Normal</option>
-                <option value="Terkunci">🔴 Akses Terkunci (Hari Libur)</option>
+                <option value="Normal">🔓 Akses Normal</option>
+                <option value="Terkunci">🔒 Akses Terkunci (Hari Libur)</option>
               </select>
             </div>
 
