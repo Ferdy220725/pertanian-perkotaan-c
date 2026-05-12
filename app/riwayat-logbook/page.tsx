@@ -25,6 +25,9 @@ export default function RiwayatPage() {
   const [unlockedGroups, setUnlockedGroups] = useState<string[]>([]);
   const [passInput, setPassInput] = useState<{ [key: string]: string }>({});
 
+  // --- TAMBAHAN LOGIKA KHUSUS DOSEN (ALL HISTORY) ---
+  const [isShowAll, setIsShowAll] = useState(false);
+
   const mahasiswaList = [
     { npm: "25025010093", nama: "SITI NUR FADILAH" },
     { npm: "25025010094", nama: "AGNIA LAQUINTA Al-Abin" },
@@ -110,30 +113,25 @@ export default function RiwayatPage() {
     );
   };
 
-const fetchGroupLogs = async (noKelompok: string) => {
-  // --- LOGIKA BARU: MENCARI HARI SENIN MINGGU INI ---
-  const hariIni = new Date();
-  // getDay() mengembalikan 0 (Minggu) sampai 6 (Sabtu)
-  const day = hariIni.getDay(); 
-  
-  // Hitung selisih untuk kembali ke hari Senin
-  // Jika hari ini Minggu (0), kita butuh mundur 6 hari.
-  // Jika Senin (1), mundur 0 hari. Jika Selasa (2), mundur 1 hari, dst.
-  const diff = hariIni.getDate() - (day === 0 ? 6 : day - 1);
-  
-  const seninMingguIni = new Date(hariIni.setDate(diff));
-  
-  // Format ke YYYY-MM-DD
-  const tanggalFilter = seninMingguIni.toISOString().split('T')[0];
-
+const fetchGroupLogs = async (noKelompok: string, fetchAll: boolean = false) => {
   setLoadingGroup(noKelompok);
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('logbook')
       .select('*')
-      .eq('kelompok', parseInt(noKelompok))
-      .gte('tanggal', tanggalFilter) // Hanya ambil data mulai dari Senin minggu ini saja
-      .order('tanggal', { ascending: true });
+      .eq('kelompok', parseInt(noKelompok));
+
+    // Jika bukan fetchAll (atau bukan mode 'Semua Data' dosen), gunakan filter mingguan
+    if (!fetchAll && !isShowAll) {
+        const hariIni = new Date();
+        const day = hariIni.getDay(); 
+        const diff = hariIni.getDate() - (day === 0 ? 6 : day - 1);
+        const seninMingguIni = new Date(hariIni.setDate(diff));
+        const tanggalFilter = seninMingguIni.toISOString().split('T')[0];
+        query = query.gte('tanggal', tanggalFilter);
+    }
+
+    const { data, error } = await query.order('tanggal', { ascending: true });
 
     if (error) throw error;
 
@@ -156,11 +154,22 @@ const fetchGroupLogs = async (noKelompok: string) => {
     if (unlockedGroups.length === 0) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('logbook')
         .select('*')
-        .in('kelompok', unlockedGroups.map(g => parseInt(g)))
-        .order('created_at', { ascending: true });
+        .in('kelompok', unlockedGroups.map(g => parseInt(g)));
+      
+      // Tambahkan logika filter yang sama untuk tombol refresh global
+      if (!isShowAll) {
+        const hariIni = new Date();
+        const day = hariIni.getDay(); 
+        const diff = hariIni.getDate() - (day === 0 ? 6 : day - 1);
+        const seninMingguIni = new Date(hariIni.setDate(diff));
+        const tanggalFilter = seninMingguIni.toISOString().split('T')[0];
+        query = query.gte('tanggal', tanggalFilter);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: true });
       if (error) throw error;
       setDataRiwayat(data || []);
     } catch (error: any) {
@@ -309,7 +318,7 @@ const fetchGroupLogs = async (noKelompok: string) => {
               />
               
               <button 
-                onClick={handleDosenVerify}
+                onClick={handleDosenVerify} 
                 className="w-full bg-black text-white py-3 rounded-lg font-black uppercase hover:bg-slate-800 transition-all mt-2"
               >
                 Masuk sebagai Dosen
@@ -330,13 +339,33 @@ const fetchGroupLogs = async (noKelompok: string) => {
             <h1 className="text-3xl font-black mt-2 uppercase tracking-tighter">Riwayat Logbook Cloud</h1>
             <p className="text-[10px] font-bold text-blue-600 mt-1 uppercase tracking-widest">{userRole === 'dosen' ? 'Akses Khusus Dosen' : `User: ${identitasUser.nama} | Kelompok: ${identitasUser.kelompok}`}</p>
           </div>
-          <button onClick={fetchLogs} className="bg-slate-100 hover:bg-slate-200 px-6 py-2 rounded-full font-bold text-xs">{loading ? "Memuat..." : "🔄 Refresh"}</button>
+          
+          <div className="flex gap-3 items-center">
+            {/* LOGIKA BARU: Toggle Semua Data untuk Dosen */}
+            {userRole === 'dosen' && (
+                <div className="flex bg-slate-100 p-1 rounded-full border border-slate-200">
+                    <button 
+                        onClick={() => { setIsShowAll(false); setDataRiwayat([]); setUnlockedGroups([]); }}
+                        className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase transition-all ${!isShowAll ? 'bg-white shadow-sm text-black' : 'text-slate-400'}`}
+                    >
+                        Minggu Ini
+                    </button>
+                    <button 
+                        onClick={() => { setIsShowAll(true); setDataRiwayat([]); setUnlockedGroups([]); }}
+                        className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase transition-all ${isShowAll ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400'}`}
+                    >
+                        Semua Data
+                    </button>
+                </div>
+            )}
+            <button onClick={fetchLogs} className="bg-slate-100 hover:bg-slate-200 px-6 py-2 rounded-full font-bold text-xs">{loading ? "Memuat..." : "🔄 Refresh"}</button>
+          </div>
         </header>
 
         {daftarKelompok.map((no) => (
           <div key={no} className="mb-16 border-b border-slate-100 pb-10">
             <div className="mb-6 flex justify-between items-end">
-              <h2 className="text-xl font-black text-blue-600 uppercase">Kelompok {no}</h2>
+              <h2 className="text-xl font-black text-blue-600 uppercase">Kelompok {no} {isShowAll && userRole === 'dosen' && <span className="text-[10px] bg-blue-100 px-2 py-0.5 rounded text-blue-700 ml-2">Full History</span>}</h2>
               {unlockedGroups.includes(no) && kelompokGroups[no] && (
                 <button onClick={() => downloadPDFPerKelompok(no)} className="border border-slate-200 px-4 py-2 rounded-lg font-bold text-[10px] no-print">📩 UNDUH PDF</button>
               )}
@@ -368,7 +397,12 @@ const fetchGroupLogs = async (noKelompok: string) => {
                 </div>
               </div>
             ) : !kelompokGroups[no] || kelompokGroups[no].length === 0 ? (
-              <p className="text-xs text-slate-400 italic text-center py-8">Loading...</p>
+              <div className="text-center py-8">
+                <p className="text-xs text-slate-400 italic">Tidak ada data ditemukan {isShowAll ? 'di riwayat permanen' : 'untuk minggu ini'}.</p>
+                {userRole === 'dosen' && !isShowAll && (
+                    <button onClick={() => { setIsShowAll(true); fetchGroupLogs(no, true); }} className="mt-2 text-[10px] font-bold text-blue-600 underline">Cek Semua Riwayat?</button>
+                )}
+              </div>
             ) : (
               <>
                 {renderKeaktifan(no)}
